@@ -3,61 +3,71 @@ from turtle import pen, width
 import numpy as np
 import random
 import math
-import matplotlib.pyplot as plt
 from PIL import Image
 from numba import jit,njit
 import time
-import sys
+import json
+import cv2
+import matplotlib.pyplot as plt
 
 n = 50
-p = 13
-l = 20
-
+l = 40
 images = list()
-B = [13,10,4,3.2,1,0.8,0.33333333333333,0.25, 0.01666666666666,0.0125,0.003125,0.0025,0.001]
-A = np.zeros((3,n*p+254+1,256+n),dtype = 'float')
-b = np.zeros((3,n*p+254+1,1),dtype = 'float')
+images1 = list()
+B = list()
+with open('info.json', newline='') as jsonfile:
+    data = json.load(jsonfile)
+for i in data:
+    image = Image.open(i["path"])
+    image_array = np.array(image)
+    images.append(image_array)
+    width, height = image.size
+    B.append(i["t"])
+    
+    image1 = cv2.imread(i["path"],cv2.IMREAD_COLOR)
+    images1.append(image1)
 
-def w(z):
-    return (1-(abs(z-127.5)/127.5))
+A = np.zeros((3,n*len(images)+256+1,256+n),dtype = 'float')
+b = np.zeros((3,A.shape[1]),dtype = 'float')
+
+w = np.zeros((256))
+for z in range(256): 
+    if z <= 127:
+        w[z] = z + 1
+    else: 
+        w[z] = 255 - z + 1
+            
 
 for i in range(0,np.size(B)):
     B[i] = math.log(B[i])
 
-for i in range(1,p+1):
-    image = Image.open("img" + str(i) +".jpg")
-    image_array = np.array(image)
-    images.append(image_array)
-
-width, height = image.size
-
-Z = np.zeros((n,p,3)) 
-for i in range(0,n):
+Z = np.zeros((n,len(images),3)) 
+for i in range(n):
     sample_x = random.randrange(width)
     sample_y = random.randrange(height)
-    for j in range(0,p):
+    for j in range(0,len(images)):
         Z[i][j][0] = images[j][sample_y][sample_x][0]
         Z[i][j][1] = images[j][sample_y][sample_x][1]
         Z[i][j][2] = images[j][sample_y][sample_x][2]
 
 # Color
-for a in range(0,3):
+for a in range(3):
     k = 0
     # Sample Point
-    for i in range(0,n):
+    for i in range(n):
         # Picture
-        for j in range(0,p):
-            wij = w(Z[i][j][a])
+        for j in range(0,len(images)):
+            wij = w[int(Z[i][j][a])]
             A[a][k][int(Z[i][j][a])] = wij
             A[a][k][256+i] = -wij
-            b[a][k][0] = wij * B[j]
+            b[a][k] = wij * B[j]
             k = k + 1
-    A[a][k][127] = 1
+    A[a][k][129] = 1
     k = k +1
-    for i in range(0,254):
-        A[a][k][i] = l * w(i)
-        A[a][k][i+1] = -2 * l * w(i)
-        A[a][k][i+2] = l * w(i)
+    for i in range(1,254):
+        A[a][k][i] = l * w[i+1]
+        A[a][k][i+1] = -2 * l * w[i+1]
+        A[a][k][i+2] = l * w[i+1]
         k = k + 1
 
 
@@ -67,7 +77,7 @@ Gb = np.linalg.lstsq(A[2],b[2],rcond=None)[0]
 
 
 
-y = np.arange(1,256)
+y = np.arange(0,256)
 plt.subplot(2,2,1)
 plt.plot(Gr[y],y)
 plt.subplot(2,2,2)
@@ -76,57 +86,54 @@ plt.subplot(2,2,3)
 plt.plot(Gb[y],y)
 plt.show()
 HDR = np.zeros((height,width,3),dtype = 'uint8')
-# @njit 
-# def recover():
-# # HDR = np.zeros((height,width,3),dtype = 'uint8')
-# for i in range(0,height):
+# for i in range(height):
 #     print(i)
-#     for j in range(0,width):
+#     for j in range(width):
 #         Er = 0
 #         Eg = 0
 #         Eb = 0
 #         Wr = 0.0001
 #         Wg = 0.0001
 #         Wb = 0.0001
-#         for a in range(0,p):
+#         for a in range(len(images)):
 #             R = images[a][i][j][0]
 #             G = images[a][i][j][1]
 #             BB = images[a][i][j][2]
-#             Er += w(R) * (Gr[0][R] -B[a])
-#             Wr += w(R)
-#             Eg += w(G) * (Gg[0][G] - B[a])
-#             Wg += w(G)
-#             Eb += w(BB) * (Gb[0][BB] - B[a])
-#             Wb += w(BB)
-#         HDR[i][j][0] = np.uint8(math.exp(Er/Wr))
-#         HDR[i][j][1] = np.uint8(math.exp(Eg/Wg))
-#         HDR[i][j][2] = np.uint8(math.exp(Eb/Wb))
-    # return HDR
+#             Er += w[R] * (Gr[R] - B[a])
+#             Wr += w[R]
+#             Eg += w[G]* (Gg[G] - B[a])
+#             Wg += w[G]
+#             Eb += w[BB] * (Gb[BB] - B[a])
+#             Wb += w[BB]
+#         HDR[i][j][0] = (math.exp(Er/Wr))
+#         HDR[i][j][1] = (math.exp(Eg/Wg))
+#         HDR[i][j][2] = (math.exp(Eb/Wb))
 
 start_time = time.time()
-for i in range(0,height):
+for i in range(height):
     print(i)
-    for j in range(0,width):
+    for j in range(width):
         Er = 0
         Eg = 0
         Eb = 0
-        Wr = 0.0001
-        Wg = 0.0001
-        Wb = 0.0001
-        for a in (0,p):
+        Wr = 0.000001
+        Wg = 0.000001
+        Wb = 0.000001
+        for a in range(len(images)):
             R = images[a][i][j][0]
             G = images[a][i][j][1]
             BB = images[a][i][j][2]
-            Er += w(R) * (Gr[R] -B[a])
-            Wr += w(R)
-            Eg += w(G) * (Gg[G] - B[a])
-            Wg += w(G)
-            Eb += w(BB) * (Gb[BB] - B[a])
-            Wb += w(BB)
-        HDR[i][j][0] = np.uint8(math.exp(Er/Wr))
-        HDR[i][j][1] = np.uint8(math.exp(Eg/Wg))
-        HDR[i][j][2] = np.uint8(math.exp(Eb/Wb))
+            Er += w[R]* (Gr[R] - B[a])
+            Wr += w[R]
+            Eg += w[G]* (Gg[G] - B[a])
+            Wg += w[G]
+            Eb += w[BB] * (Gb[BB] - B[a])
+            Wb += w[BB]
+        HDR[i][j][0] = (math.exp(Er/Wr))
+        HDR[i][j][1] = (math.exp(Eg/Wg))
+        HDR[i][j][2] = (math.exp(Eb/Wb))
 
-pil_image=Image.fromarray(HDR)
+
+pil_image=Image.fromarray(np.uint8(HDR))
 print('Time used: {} sec'.format(time.time()-start_time))
 pil_image.show()
