@@ -1,7 +1,8 @@
 from cmath import log,sqrt
 import math
 from turtle import width
-from cv2 import sqrt
+import cv2
+from matplotlib import image
 import numpy as np
 import random
 from PIL import Image
@@ -19,10 +20,10 @@ def readfile(filename):
     with open(filename, newline='') as jsonfile:
         data = json.load(jsonfile)
     for i in data:
-        image = Image.open(i["path"])
-        image_array = np.array(image)
-        images.append(image_array)
-        width, height = image.size
+        image = cv2.imread(i["path"],cv2.IMREAD_COLOR)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        images.append(image)
+        height, width, channel = image.shape
         B.append(i["t"])
     flatten = np.zeros((len(images), 3, width*height),dtype=np.uint8)    
     for i in range(len(images)):
@@ -111,6 +112,7 @@ Gg = response_curve(images,Z[1],B)
 Gb = response_curve(images,Z[2],B)
 HDR = recover(Gr,Gg,Gb,flattenImage,B,width,height)
 
+#test = images[
 
 y = np.arange(0,256)
 plt.plot(Gr[y],y,color = 'r')
