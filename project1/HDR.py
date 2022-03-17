@@ -10,13 +10,13 @@ import matplotlib.pyplot as plt
 from scipy import ndimage
 
 # Read File
-def readfile(filename):
+def readfile(folder,filename):
     images = list()
     B = list()
-    with open(filename, newline='') as jsonfile:
+    with open(folder+filename, newline='') as jsonfile:
         data = json.load(jsonfile)
     for i in data:
-        image = cv2.imread(i["path"],cv2.IMREAD_COLOR)
+        image = cv2.imread(folder + i["path"],cv2.IMREAD_COLOR)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         images.append(image)
         height, width, channel = image.shape
@@ -74,10 +74,11 @@ def tone_mapping(hdr):
     Lm = a * (Lw / wr)
     Ld = (Lm*(1+(Lm/ww))/(Lm+1))
     hdr[0:3] = hdr[0:3] *Ld/Lw
+    hdr = np.reshape(np.transpose(hdr), (height,width,3))
     return hdr
 
 # Simplest tone mapping
-def recover(Gr,Gg,Gb,flattenImage,B,width,height):
+def hdr_recover(Gr,Gg,Gb,flattenImage,B):
     w = np.zeros((256))
     for z in range(256): 
         if z <= 127:
@@ -97,20 +98,18 @@ def recover(Gr,Gg,Gb,flattenImage,B,width,height):
         wsum[1] +=wij_G
         wsum[2] +=wij_B
         
-        e[0] = np.subtract(Gr[flattenImage[i][0]] ,math.log(B[i]))
-        e[1] = np.subtract(Gg[flattenImage[i][1]] ,math.log(B[i]))
-        e[2] = np.subtract(Gb[flattenImage[i][2]] ,math.log(B[i]))
+        e[0] = Gr[flattenImage[i][0]] - math.log(B[i])
+        e[1] = Gg[flattenImage[i][1]] - math.log(B[i])
+        e[2] = Gb[flattenImage[i][2]] - math.log(B[i])
         
-        hdr[0] += np.multiply(e[0] , wij_R)
-        hdr[1] += np.multiply(e[1] , wij_G)
-        hdr[2] += np.multiply(e[2] , wij_B)
+        hdr[0] += e[0] * wij_R
+        hdr[1] += e[1] * wij_G
+        hdr[2] += e[2] * wij_B
 
     hdr = np.divide(hdr,wsum)
     hdr = np.exp(hdr)
-    
-    hdr = tone_mapping(hdr)
-    
-    hdr = np.reshape(np.transpose(hdr), (height,width,3))
+    # hdr = tone_mapping(hdr)
+    # hdr = np.reshape(np.transpose(hdr), (height,width,3))
     return hdr
 
 def ComputeBitmaps(img):
@@ -178,7 +177,7 @@ def draw_responseCurve(Gr,Gg,Gb):
 # cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
 
 start_time = time.time()
-images, B, flattenImage, width, height = readfile("./info.json")
+images, B, flattenImage, width, height = readfile("./","info.json")
 # for i in range(len(images)):
 #     print(i)
 #     if(i!=5):
@@ -191,7 +190,16 @@ Z = sampling(images,width,height,n)
 Gr = response_curve(images,Z[0],B,n,l)
 Gg = response_curve(images,Z[1],B,n,l)
 Gb = response_curve(images,Z[2],B,n,l)
-HDR = recover(Gr,Gg,Gb,flattenImage,B,width,height)
+
+HDR = hdr_recover(Gr,Gg,Gb,flattenImage,B)
+
+hdr_image = np.zeros((3,height*width))
+hdr_image[0:3] = (HDR[0]*0.27)+(HDR[1]*0.67)+(HDR[2]*0.06)
+hdr_image = np.reshape(np.transpose(hdr_image), (height,width,3))
+hdr_image = (hdr_image/np.amax(hdr_image)*255).astype(np.float32)
+cv2.imwrite('HDR.hdr', hdr_image)
+
+HDR = tone_mapping(HDR)
 
 np.save('HDR.hdr',HDR)
 
@@ -203,4 +211,7 @@ imgf32 = (HDR).astype(np.float32)
 plt.figure(constrained_layout=False,figsize=(10,10))
 plt.title("fused HDR radiance map", fontsize=20)
 plt.imshow(imgf32)
+plt.figure(constrained_layout=False,figsize=(10,10))
+plt.title("fused HDR radiance map", fontsize=20)
+plt.imshow(hdr_image)
 plt.show()
