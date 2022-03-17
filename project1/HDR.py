@@ -1,13 +1,9 @@
-from asyncio.windows_events import INFINITE
-from cmath import log,sqrt
 import math
-from turtle import width
 import cv2
 from cv2 import cvtColor
 from matplotlib import image
 import numpy as np
 import random
-from PIL import Image
 import time
 import json
 import matplotlib.pyplot as plt
@@ -71,6 +67,17 @@ def response_curve(images,Z,B):
         A[k][i+2] = l * w[i]
         k = k + 1
     return np.linalg.lstsq(A,b,rcond=None)[0]
+
+def tone_mapping(hdr):
+    a = 0.18
+    ww = pow(4.5,2)
+    Lw = (hdr[0]*0.27)+(hdr[1]*0.67)+(hdr[2]*0.06)
+    wr = np.exp(np.sum(np.log(Lw+0.001))/hdr.shape[1])
+    Lm = a * (Lw / wr)
+    Ld = (Lm*(1+(Lm/ww))/(Lm+1))
+    hdr[0:3] = hdr[0:3] *Ld/Lw
+    return hdr
+
 # Simplest tone mapping
 def recover(Gr,Gg,Gb,flattenImage,B,width,height):
     w = np.zeros((256))
@@ -102,6 +109,9 @@ def recover(Gr,Gg,Gb,flattenImage,B,width,height):
 
     hdr = np.divide(hdr,wsum)
     hdr = np.exp(hdr)
+    
+    hdr = tone_mapping(hdr)
+    
     hdr = np.reshape(np.transpose(hdr), (height,width,3))
     return hdr
 
@@ -117,19 +127,17 @@ def ComputeBitmaps(img):
     return tb,eb
 
 def ComputeShift(img1,img2):
-    for a in range(5,-1,-1):
-        if(a==5):
+    for a in range(8,-1,-1):
+        if(a==8):
             shift_x=0
             shift_y=0
         else:
-            if(a!=0):
-                shift_x *=2
-                shift_y *=2
-            
+            shift_x *=2
+            shift_y *=2
         height, width, channel = img1.shape
         sml_img1 = cv2.resize(img1, (int(width/math.pow(2,a)), int(height/math.pow(2,a))), interpolation=cv2.INTER_AREA)
         sml_img2 = cv2.resize(img2, (int(width/math.pow(2,a)), int(height/math.pow(2,a))), interpolation=cv2.INTER_AREA)
-        
+    
         min_err = height*width
         tb1,eb1 = ComputeBitmaps(sml_img1)
         tb2,eb2 = ComputeBitmaps(sml_img2)
@@ -152,28 +160,36 @@ def ComputeShift(img1,img2):
                     current_shift_x = xs
         shift_x = current_shift_x
         shift_y = current_shift_y
-        print("end")
-        print(shift_y,shift_x)
+        #print("end")
         if(a==0):
+            print(shift_y,shift_x)
             return shift_y, shift_x
 
-# img1 = cv2.imread("./phone/1.jpg",cv2.IMREAD_COLOR)
-# img2 = cv2.imread("./phone/5.jpg",cv2.IMREAD_COLOR)
+img1 = cv2.imread("./NTU/361448.jpg",cv2.IMREAD_COLOR)
+img2 = cv2.imread("./NTU/361449.jpg",cv2.IMREAD_COLOR)
 
-# shift_y, shift_x = ComputeShift(img1,img2)
+shift_y, shift_x = ComputeShift(img1,img2)
 
-# adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
-# cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
-# cv2.imshow('img1' , np.array(img1, dtype = np.uint8 ) )
-# cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
+adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
+cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
+cv2.imshow('img1' , np.array(img1, dtype = np.uint8 ) )
+cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
 
 start_time = time.time()
-images, B, flattenImage, width, height = readfile("info1.json")
+images, B, flattenImage, width, height = readfile("./info1.json")
+# for i in range(len(images)):
+#     print(i)
+#     if(i!=5):
+#         shift_y, shift_x = ComputeShift(images[5],images[i])
+#         images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
+
 Z = sampling(images,width,height)
 Gr = response_curve(images,Z[0],B)
 Gg = response_curve(images,Z[1],B)
 Gb = response_curve(images,Z[2],B)
 HDR = recover(Gr,Gg,Gb,flattenImage,B,width,height)
+
+np.save('HDR.hdr',HDR)
 
 print('Time used: {} sec'.format(time.time()-start_time))  
 
@@ -182,17 +198,7 @@ print('Time used: {} sec'.format(time.time()-start_time))
 # plt.plot(Gg[y],y,color = 'g')
 # plt.plot(Gb[y],y,color = 'b')
 
-
-
-    
-
-    
-
-
-
-#tb,eb = ComputeBitmaps(test)
-
-imgf32 = (HDR/np.amax(HDR)*255).astype(np.float32)
+imgf32 = (HDR).astype(np.float32)
 plt.figure(constrained_layout=False,figsize=(10,10))
 plt.title("fused HDR radiance map", fontsize=20)
 plt.imshow(imgf32)
