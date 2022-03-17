@@ -9,8 +9,6 @@ import json
 import matplotlib.pyplot as plt
 from scipy import ndimage
 
-n = 50
-l = 40
 # Read File
 def readfile(filename):
     images = list()
@@ -29,7 +27,7 @@ def readfile(filename):
             flatten[i,c] = np.reshape(images[i][:,:,c], (width*height,))
     return images,B,flatten,width,height
 # Sample
-def sampling(images,width,height):
+def sampling(images,width,height,n):
     Z = np.zeros((3,n,len(images))) 
     for i in range(n):
         sample_x = random.randrange(width)
@@ -40,7 +38,7 @@ def sampling(images,width,height):
             Z[2][i][j] = images[j][sample_y][sample_x][2]
     return Z
 # Calculate Response Curve
-def response_curve(images,Z,B):
+def response_curve(images,Z,B,n,l):
     A = np.zeros((n*len(images)+254+1,256+n),dtype = 'float')
     b = np.zeros((A.shape[0]),dtype = 'float')
     w = np.zeros((256))
@@ -165,49 +163,44 @@ def ComputeShift(img1,img2):
             print(shift_y,shift_x)
             return shift_y, shift_x
 
-img1 = cv2.imread("./NTU/361448.jpg",cv2.IMREAD_COLOR)
-img2 = cv2.imread("./NTU/361449.jpg",cv2.IMREAD_COLOR)
+def draw_responseCurve(Gr,Gg,Gb):
+    y = np.arange(0,256)
+    plt.plot(Gr[y],y,color = 'r')
+    plt.plot(Gg[y],y,color = 'g')
+    plt.plot(Gb[y],y,color = 'b')
 
-shift_y, shift_x = ComputeShift(img1,img2)
-
-adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
-cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
-cv2.imshow('img1' , np.array(img1, dtype = np.uint8 ) )
-cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
+# img1 = cv2.imread("./NTU/361448.jpg",cv2.IMREAD_COLOR)
+# img2 = cv2.imread("./NTU/361449.jpg",cv2.IMREAD_COLOR)
+# shift_y, shift_x = ComputeShift(img1,img2)
+# adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
+# cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
+# cv2.imshow('img1' , np.array(img1, dtype = np.uint8 ) )
+# cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
 
 start_time = time.time()
-images, B, flattenImage, width, height = readfile("./info1.json")
+images, B, flattenImage, width, height = readfile("./info.json")
 # for i in range(len(images)):
 #     print(i)
 #     if(i!=5):
 #         shift_y, shift_x = ComputeShift(images[5],images[i])
 #         images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
 
-Z = sampling(images,width,height)
-Gr = response_curve(images,Z[0],B)
-Gg = response_curve(images,Z[1],B)
-Gb = response_curve(images,Z[2],B)
+n = 50
+l = 40
+Z = sampling(images,width,height,n)
+Gr = response_curve(images,Z[0],B,n,l)
+Gg = response_curve(images,Z[1],B,n,l)
+Gb = response_curve(images,Z[2],B,n,l)
 HDR = recover(Gr,Gg,Gb,flattenImage,B,width,height)
 
 np.save('HDR.hdr',HDR)
 
 print('Time used: {} sec'.format(time.time()-start_time))  
 
-# y = np.arange(0,256)
-# plt.plot(Gr[y],y,color = 'r')
-# plt.plot(Gg[y],y,color = 'g')
-# plt.plot(Gb[y],y,color = 'b')
+draw_responseCurve(Gr,Gg,Gb)
 
 imgf32 = (HDR).astype(np.float32)
 plt.figure(constrained_layout=False,figsize=(10,10))
 plt.title("fused HDR radiance map", fontsize=20)
 plt.imshow(imgf32)
 plt.show()
-#cv2.imshow('Gray' , np.array(tb, dtype = np.uint8 ) )
-# cv2.imshow('eb' , np.array(eb, dtype = np.uint8 ) )
-# plt.show()
-
-
-
-# pil_image=Image.fromarray(np.uint8(hdr))
-# pil_image.show()
