@@ -1,7 +1,6 @@
 import math
 import cv2
 from cv2 import cvtColor
-from matplotlib import image
 import numpy as np
 import random
 import time
@@ -10,7 +9,7 @@ import matplotlib.pyplot as plt
 from scipy import ndimage
 
 # Read File
-def readfile(folder,filename):
+def readfile(folder,filename,image_align = False):
     images = list()
     B = list()
     with open(folder+filename, newline='') as jsonfile:
@@ -25,6 +24,11 @@ def readfile(folder,filename):
     for i in range(len(images)):
         for c in range(3):
             flatten[i,c] = np.reshape(images[i][:,:,c], (width*height,))
+    if(image_align):
+        for i in range(1,len(images)-1):
+            shift_y, shift_x = ComputeShift(images[0],images[i])
+            images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
+    
     return images,B,flatten,width,height
 # Sample
 def sampling(images,width,height,n):
@@ -67,8 +71,8 @@ def response_curve(images,Z,B,n,l):
     return np.linalg.lstsq(A,b,rcond=None)[0]
 
 def tone_mapping(hdr):
-    a = 0.18
-    ww = pow(4.5,2)
+    a =  0.18
+    ww = pow(3,2)
     Lw = (hdr[0]*0.27)+(hdr[1]*0.67)+(hdr[2]*0.06)
     wr = np.exp(np.sum(np.log(Lw+0.001))/hdr.shape[1])
     Lm = a * (Lw / wr)
@@ -168,8 +172,28 @@ def draw_responseCurve(Gr,Gg,Gb):
     plt.plot(Gg[y],y,color = 'g')
     plt.plot(Gb[y],y,color = 'b')
 
-# img1 = cv2.imread("./NTU/361448.jpg",cv2.IMREAD_COLOR)
-# img2 = cv2.imread("./NTU/361449.jpg",cv2.IMREAD_COLOR)
+def save_radiance(image):
+    
+    image = np.reshape(np.transpose(image), (height,width,3))
+    
+    f = open("recovered_HDR.hdr", "wb")
+    f.write(b"#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n")
+    f.write("-Y {0} +X {1}\n".format(image.shape[0], image.shape[1]).encode())
+
+    brightest = np.maximum(np.maximum(image[...,0], image[...,1]), image[...,2])
+    mantissa = np.zeros_like(brightest)
+    exponent = np.zeros_like(brightest)
+    np.frexp(brightest, mantissa, exponent)
+    scaled_mantissa = mantissa * 256.0 / brightest
+    rgbe = np.zeros((image.shape[0], image.shape[1], 4), dtype=np.uint8)
+    rgbe[...,0:3] = np.around(image[...,0:3] * scaled_mantissa[...,None])
+    rgbe[...,3] = np.around(exponent + 128)
+
+    rgbe.flatten().tofile(f)
+    f.close()
+    
+# img1 = cv2.imread("./phone/1.jpg",cv2.IMREAD_COLOR)
+# img2 = cv2.imread("./phone/2.jpg",cv2.IMREAD_COLOR)
 # shift_y, shift_x = ComputeShift(img1,img2)
 # adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
 # cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
@@ -177,41 +201,25 @@ def draw_responseCurve(Gr,Gg,Gb):
 # cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
 
 start_time = time.time()
-images, B, flattenImage, width, height = readfile("./","info.json")
-# for i in range(len(images)):
-#     print(i)
-#     if(i!=5):
-#         shift_y, shift_x = ComputeShift(images[5],images[i])
-#         images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
 
+
+images, B, flattenImage, width, height = readfile("./images/cat/","info.json")
 n = 50
 l = 40
 Z = sampling(images,width,height,n)
-Gr = response_curve(images,Z[0],B,n,l)
-Gg = response_curve(images,Z[1],B,n,l)
-Gb = response_curve(images,Z[2],B,n,l)
-
+Gr,Gg,Gb = response_curve(images,Z[0],B,n,l),response_curve(images,Z[1],B,n,l), response_curve(images,Z[2],B,n,l)
 HDR = hdr_recover(Gr,Gg,Gb,flattenImage,B)
-
-hdr_image = np.zeros((3,height*width))
-hdr_image[0:3] = (HDR[0]*0.27)+(HDR[1]*0.67)+(HDR[2]*0.06)
-hdr_image = np.reshape(np.transpose(hdr_image), (height,width,3))
-hdr_image = (hdr_image/np.amax(hdr_image)*255).astype(np.float32)
-cv2.imwrite('HDR.hdr', hdr_image)
-
+save_radiance(HDR)
 HDR = tone_mapping(HDR)
 
-np.save('HDR.hdr',HDR)
 
 print('Time used: {} sec'.format(time.time()-start_time))  
 
 draw_responseCurve(Gr,Gg,Gb)
 
 imgf32 = (HDR).astype(np.float32)
+cv2.imwrite('tone_mapped.png', cvtColor(imgf32,cv2.COLOR_RGB2BGR)*255)
 plt.figure(constrained_layout=False,figsize=(10,10))
-plt.title("fused HDR radiance map", fontsize=20)
+plt.title("Tone-mapped image", fontsize=20)
 plt.imshow(imgf32)
-plt.figure(constrained_layout=False,figsize=(10,10))
-plt.title("fused HDR radiance map", fontsize=20)
-plt.imshow(hdr_image)
 plt.show()
