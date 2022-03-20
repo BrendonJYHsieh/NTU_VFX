@@ -1,4 +1,5 @@
 import math
+from operator import truth
 import cv2
 from cv2 import cvtColor
 import numpy as np
@@ -6,6 +7,7 @@ import random
 import time
 import json
 import matplotlib.pyplot as plt
+import argparse
 from scipy import ndimage
 
 # Read File
@@ -25,9 +27,11 @@ def readfile(folder,filename,image_align = False):
         for c in range(3):
             flatten[i,c] = np.reshape(images[i][:,:,c], (width*height,))
     if(image_align):
-        for i in range(1,len(images)-1):
-            shift_y, shift_x = ComputeShift(images[0],images[i])
-            images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
+        middle = int(len(images)/2)
+        for i in range(0,len(images)):
+            if(i!=middle):
+                shift_y, shift_x = ComputeShift(images[middle],images[i])
+                images[i] = ndimage.shift(images[i], shift=(shift_y, shift_x,0), mode='constant', cval=255)
     
     return images,B,flatten,width,height
 # Sample
@@ -71,7 +75,7 @@ def response_curve(images,Z,B,n,l):
     return np.linalg.lstsq(A,b,rcond=None)[0]
 
 def tone_mapping(hdr):
-    a =  0.36
+    a =  0.45
     ww = pow(3,2)
     Lw = (hdr[0]*0.27)+(hdr[1]*0.67)+(hdr[2]*0.06)
     wr = np.exp(np.sum(np.log(Lw+0.001))/hdr.shape[1])
@@ -152,7 +156,6 @@ def ComputeShift(img1,img2):
                 diff_b = np.bitwise_and(diff_b,eb1)
                 diff_b = np.bitwise_and(diff_b,shifted_eb2)
                 err = np.sum(diff_b)/255
-                print(i,j,err)
                 if(err<min_err):
                     min_err = err
                     current_shift_y = ys
@@ -161,7 +164,6 @@ def ComputeShift(img1,img2):
         shift_y = current_shift_y
         #print("end")
         if(a==0):
-            print(shift_y,shift_x)
             return shift_y, shift_x
 
 def draw_responseCurve(Gr,Gg,Gb):
@@ -190,18 +192,25 @@ def save_radiance(image):
     rgbe.flatten().tofile(f)
     f.close()
     
-# img1 = cv2.imread("./phone/1.jpg",cv2.IMREAD_COLOR)
-# img2 = cv2.imread("./phone/2.jpg",cv2.IMREAD_COLOR)
+# img1 = cv2.imread("./Images/NTNU1/1.jpg",cv2.IMREAD_COLOR)
+# img2 = cv2.imread("./Images/NTNU1/5.jpg",cv2.IMREAD_COLOR)
 # shift_y, shift_x = ComputeShift(img1,img2)
+# print(shift_y,shift_x)
 # adjust = ndimage.shift(img2, shift=(shift_y, shift_x,0), mode='constant', cval=255)
 # cv2.imshow('adjust' , np.array(adjust, dtype = np.uint8 ) )
 # cv2.imshow('img1' , np.array(img1, dtype = np.uint8 ) )
 # cv2.imshow('img2' , np.array(img2, dtype = np.uint8 ) ) 
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--path", default="../data/", type=str)
+parser.add_argument('--align', default=False, type=bool)
+
+args = parser.parse_args()
+
+
 start_time = time.time()
-
-
-images, B, flattenImage, width, height = readfile("./images/NTNU/","info.json")
+# "./images/NTNU1/"
+images, B, flattenImage, width, height = readfile(args.path,"info.json", args.align)
 n = 49
 l = 100
 Z = sampling(images,width,height,n)
@@ -216,7 +225,7 @@ print('Time used: {} sec'.format(time.time()-start_time))
 draw_responseCurve(Gr,Gg,Gb)
 
 imgf32 = (HDR).astype(np.float32)
-cv2.imwrite('tone_mapped.png', cvtColor(imgf32,cv2.COLOR_RGB2BGR)*255)
+cv2.imwrite('result.png', cvtColor(imgf32,cv2.COLOR_RGB2BGR)*255)
 plt.figure(constrained_layout=False,figsize=(10,10))
 plt.title("Tone-mapped image", fontsize=20)
 plt.imshow(imgf32)
