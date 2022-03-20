@@ -71,7 +71,7 @@ def response_curve(images,Z,B,n,l):
     return np.linalg.lstsq(A,b,rcond=None)[0]
 
 def tone_mapping(hdr):
-    a =  0.18
+    a =  0.36
     ww = pow(3,2)
     Lw = (hdr[0]*0.27)+(hdr[1]*0.67)+(hdr[2]*0.06)
     wr = np.exp(np.sum(np.log(Lw+0.001))/hdr.shape[1])
@@ -112,8 +112,6 @@ def hdr_recover(Gr,Gg,Gb,flattenImage,B):
 
     hdr = np.divide(hdr,wsum)
     hdr = np.exp(hdr)
-    # hdr = tone_mapping(hdr)
-    # hdr = np.reshape(np.transpose(hdr), (height,width,3))
     return hdr
 
 def ComputeBitmaps(img):
@@ -203,9 +201,9 @@ def save_radiance(image):
 start_time = time.time()
 
 
-images, B, flattenImage, width, height = readfile("./images/cat/","info.json")
-n = 50
-l = 40
+images, B, flattenImage, width, height = readfile("./images/NTNU/","info.json")
+n = 49
+l = 100
 Z = sampling(images,width,height,n)
 Gr,Gg,Gb = response_curve(images,Z[0],B,n,l),response_curve(images,Z[1],B,n,l), response_curve(images,Z[2],B,n,l)
 HDR = hdr_recover(Gr,Gg,Gb,flattenImage,B)
