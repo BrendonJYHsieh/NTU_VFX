@@ -68,42 +68,6 @@ def DoG(image):
 
     return array(gaussian_images, dtype=object), dog_images
 
-def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
-
-    keypoints = []
-    height, width = gaussian_image.shape
-
-    scale = 1.5 * keypoint.size  
-
-    radius = int(round(3 * scale))
-    histogram = zeros(36)
-
-    for i in range(-radius, radius + 1):
-        for j in range(-radius, radius + 1):
-            y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + i
-            x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + j
-            if y > 0 and y < height - 1 and x > 0 and x < width - 1:
-                Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
-                Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
-                gradient_magnitude = sqrt(Lx * Lx + Ly * Ly)
-                gradient_orientation =  np.rad2deg( np.arctan2(Ly, Lx))
-                w =  np.exp(-0.5 / (scale ** 2) * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
-                histogram_index = int(round(gradient_orientation / 10.))
-                histogram[histogram_index % 36] += w * gradient_magnitude
-
-    orientation_max = max(histogram)
-    orientation_peaks =  np.where( np.logical_and(histogram >  np.roll(histogram, 1), histogram >  np.roll(histogram, -1)))[0]
-    for peak_index in orientation_peaks:
-        peak_value = histogram[peak_index]
-        if peak_value >= 0.8 * orientation_max: # 讓description更reliable
-            left_value = histogram[(peak_index - 1) % 36]
-            right_value = histogram[(peak_index + 1) % 36]
-            interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
-            orientation = 360. - interpolated_peak_index * 360. / 36
-            new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-            keypoints.append(new_keypoint)
-    return keypoints
-
 def FindKeypoints(gaussian_images, dogs):
     keypoints = []
     for octave_index, dog in enumerate(dogs):
@@ -169,8 +133,31 @@ def FindKeypoints(gaussian_images, dogs):
                                 , abs(response) # response
                                 , octave_index + _image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
 
-                                keypoints_with_orientations = computeKeypointsWithOrientations(keypoint, octave_index, gaussian_images[octave_index][_image_index])
-                                keypoints.extend(keypoints_with_orientations)                   
+                                gaussian_image = gaussian_images[octave_index][_image_index]
+                                height, width = gaussian_image.shape
+                                scale = 1.5 * keypoint.size  
+                                radius = int(round(3 * scale))
+                                histogram = zeros(36)
+
+                                for a in range(-radius, radius + 1):
+                                    for b in range(-radius, radius + 1):
+                                        y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + a
+                                        x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + b
+                                        if y > 0 and y < height - 1 and x > 0 and x < width - 1:
+                                            Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
+                                            Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
+                                            m = sqrt(Lx * Lx + Ly * Ly)
+                                            theta =  np.rad2deg( np.arctan2(Ly, Lx))
+                                            histogram_index = int(round(theta / 10.))
+                                            histogram[histogram_index % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m
+
+                                orientation_max = max(histogram)
+                                for peak_index in range(len(histogram)):
+                                    if histogram[peak_index] >= 0.8 * orientation_max: # Make description more reliable
+                                        orientation = 360. - (peak_index + 0.5 * (histogram[(peak_index - 1) % 36] - histogram[(peak_index + 1) % 36]) 
+                                                    / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
+                                        new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
+                                        keypoints.append(new_keypoint)               
     return keypoints
 
 def unpackOctave(keypoint):
@@ -192,7 +179,7 @@ def generateDescriptors(keypoints, gaussian_images, window_width=4, num_bins=8, 
         num_rows, num_cols = gaussian_image.shape
         point = np.round(scale * array(keypoint.pt)).astype('int')
         bins_per_degree = num_bins / 360.
-        angle = 360. - keypoint.angle
+        angle = -keypoint.angle
         cos_angle = np.cos(np.deg2rad(angle))
         sin_angle = np.sin(np.deg2rad(angle))
         weight_multiplier = -0.5 / ((0.5 * window_width) ** 2)
