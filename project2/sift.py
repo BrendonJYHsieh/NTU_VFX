@@ -14,7 +14,6 @@ from functools import cmp_to_key
 
 float_tolerance = 1e-7
 
-
 def Dog_visualization(layers):
     total_height = 0
     max_width = 0
@@ -63,6 +62,7 @@ def DoG(image):
         gaussian_images.append(gaussian_images_in_octave)
      
     # Generate DOG
+
     dog_images = []
     for i in gaussian_images:
         sub_images = []
@@ -70,91 +70,7 @@ def DoG(image):
             sub_images.append(subtract(i[j],i[j-1]))
         dog_images.append(sub_images)
 
-    return array(gaussian_images, dtype=object),dog_images
-
-def compareKeypoints(keypoint1, keypoint2):
-    """Return True if keypoint1 is less than keypoint2
-    """
-    if keypoint1.pt[0] != keypoint2.pt[0]:
-        return keypoint1.pt[0] - keypoint2.pt[0]
-    if keypoint1.pt[1] != keypoint2.pt[1]:
-        return keypoint1.pt[1] - keypoint2.pt[1]
-    if keypoint1.size != keypoint2.size:
-        return keypoint2.size - keypoint1.size
-    if keypoint1.angle != keypoint2.angle:
-        return keypoint1.angle - keypoint2.angle
-    if keypoint1.response != keypoint2.response:
-        return keypoint2.response - keypoint1.response
-    if keypoint1.octave != keypoint2.octave:
-        return keypoint2.octave - keypoint1.octave
-    return keypoint2.class_id - keypoint1.class_id
-
-def removeDuplicateKeypoints(keypoints):
-    """Sort keypoints and remove duplicate keypoints
-    """
-    if len(keypoints) < 2:
-        return keypoints
-
-    keypoints.sort(key=cmp_to_key(compareKeypoints))
-    unique_keypoints = [keypoints[0]]
-
-    for next_keypoint in keypoints[1:]:
-        last_unique_keypoint = unique_keypoints[-1]
-        if last_unique_keypoint.pt[0] != next_keypoint.pt[0] or \
-           last_unique_keypoint.pt[1] != next_keypoint.pt[1] or \
-           last_unique_keypoint.size != next_keypoint.size or \
-           last_unique_keypoint.angle != next_keypoint.angle:
-            unique_keypoints.append(next_keypoint)
-    return unique_keypoints
-
-def localizeExtremumViaQuadraticFit(ii, jj, _image_index, _octave_index, dog):
-
-    image_shape = dog[0].shape
-    for iteration in range(5):
-        image0, image1, image2 = dog[_image_index-1:_image_index+2]
-        center_pixel = image1[ ii, jj]
-        # Gradient
-        g = [((image1[ii  , jj+1] - image1[ii  , jj-1])/2)/255, 
-             ((image1[ii+1, jj  ] - image1[ii-1, jj  ])/2)/255, 
-             ((image2[ii  , jj  ] - image0[ii  , jj  ])/2)/255]
-
-        # Hessian
-        h = array([
-            [(image1[ii  , jj+1] - 2 * center_pixel + image1[ii  , jj-1])/255,
-             (image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
-             (image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255], 
-            [(image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
-             (image1[ii+1, jj  ] - 2 * center_pixel + image1[ii-1, jj  ])/255,
-             (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255],
-            [(image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255, 
-             (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255, 
-             (image2[ii  , jj  ] - 2 * center_pixel + image0[ii  , jj  ])/255]])
-
-        approximation = -lstsq(h, g, rcond=None)[0]
-        if all(abs(approximation)<0.5):
-            break
-        jj += round(approximation[0])
-        ii += round(approximation[1])
-        _image_index += round(approximation[2])
-
-        # Checking point is inside
-        if ii < 1 or jj < 1 or ii > image_shape[0] - 2  or jj > image_shape[1] - 2 or _image_index < 1 or _image_index > 3:
-            return None
-
-    response = center_pixel + 0.5 * np.dot(g, approximation)
-    H_Tr  = h[0,0] + h[1,1]
-    H_Det = h[0,0] * h[1,1] - h[0,1] * h[0,1]
-    if (H_Tr ** 2) / H_Det < 12.1 :
-        # Keypoint 
-        keypoint = cv2.KeyPoint(
-        (jj+approximation[0]) * (2 ** _octave_index), # X
-        (ii+approximation[1]) * (2 ** _octave_index) # Y
-        , 1.6 * (2 ** ((_image_index + approximation[2]) / np.float32(3))) * (2 ** (_octave_index)) #size
-        , -1 # angle
-        , abs(response) # response
-        , _octave_index + _image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
-        return keypoint, _image_index
-    return None
+    return array(gaussian_images, dtype=object), dog_images
 
 #############################
 # Keypoint scale conversion #
@@ -230,9 +146,9 @@ def FindKeypoints(gaussian_images, dogs):
                             _center_pixel = _image1[ii, jj]
 
                             # Gradient
-                            g = [((image1[ii  , jj+1] - _image1[ii  , jj-1])/2)/255, 
-                                ((image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
-                                ((image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
+                            g = [((_image1[ii  , jj+1] - _image1[ii  , jj-1])/2)/255, 
+                                ((_image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
+                                ((_image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
 
                             # Hessian
                             h = array([
@@ -379,8 +295,6 @@ def SIFT(path):
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(image)
     keypoints = FindKeypoints(gaussian,dog)
-    #keypoints = removeDuplicateKeypoints(keypoints)
-    #keypoints = convertKeypointsToInputImageSize(keypoints)
     descriptors = generateDescriptors(keypoints, gaussian)
     return keypoints,descriptors
 
