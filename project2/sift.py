@@ -24,15 +24,15 @@ def Dog_visualization(layers):
             max_width= i[0].shape[1]
     height = total_height
     width = max_width
-    newimg = np.zeros((height, width*6, 3), np.uint8)
+    image = np.zeros((height, width*6, 3), np.uint8)
     amount = 0
     for l in layers:
         for i in range(0,len(l)):
             for j in range(3):
                 h, w = l[i].shape
-                newimg[amount:h+amount,w*i:w*(i+1),j]=l[i] 
+                image[amount:h+amount,w*i:w*(i+1),j]=l[i] 
         amount += l[0].shape[0]
-    plt.imshow(newimg)
+    plt.imshow(image)
     plt.show()
 
 def DoG(image):
