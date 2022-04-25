@@ -209,8 +209,9 @@ def FindKeypoints(gaussian_images, dogs):
     for octave_index, dog in enumerate(dogs):
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
-            for i in range(1, image0.shape[0] - 2):
-                for j in range(1, image0.shape[1] - 2):
+            height , width = image0.shape
+            for i in range(1, height - 2):
+                for j in range(1, width - 2):
                     center_pixel = image1[i,j]
                     check = False
                     if (abs(center_pixel)>1):
@@ -221,11 +222,57 @@ def FindKeypoints(gaussian_images, dogs):
                             if(all(center_pixel <= image0[i-1:i+2, j-1:j+2]) and all(center_pixel <= image1[i-1:i+2, j-1:j+2]) and all(center_pixel <= image2[i-1:i+2, j-1:j+2])):
                                 check = True
                     if(check):
-                        localization_result = localizeExtremumViaQuadraticFit(i, j, image_index, octave_index, dog)
-                        if localization_result :
-                            keypoint, localized_image_index = localization_result
-                            keypoints_with_orientations = computeKeypointsWithOrientations(keypoint, octave_index, gaussian_images[octave_index][localized_image_index])   
-                            keypoints.extend(keypoints_with_orientations)
+                        ii = i
+                        jj = j
+                        check = True
+                        _image_index = image_index
+                        _octave_index = octave_index
+                        for iteration in range(5):
+                            image0, image1,image2 = dog[_image_index-1:_image_index+2]
+                            center_pixel = image1[ii, jj]
+                            # Gradient
+                            g = [((image1[ii  , jj+1] - image1[ii  , jj-1])/2)/255, 
+                                ((image1[ii+1, jj  ] - image1[ii-1, jj  ])/2)/255, 
+                                ((image2[ii  , jj  ] - image0[ii  , jj  ])/2)/255]
+                            # Hessian
+                            h = array([
+                                [(image1[ii  , jj+1] - 2 * center_pixel + image1[ii  , jj-1])/255,
+                                 (image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
+                                 (image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255
+                                ], 
+                                [(image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
+                                 (image1[ii+1, jj  ] - 2 * center_pixel + image1[ii-1, jj  ])/255,
+                                 (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255]
+                                ,
+                                [(image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255, 
+                                 (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255, 
+                                 (image2[ii  , jj  ] - 2 * center_pixel + image0[ii  , jj  ])/255]])
+
+                            approximation = -lstsq(h, g, rcond=None)[0]
+                            if all(abs(approximation)<0.5):
+                                break
+                            jj += round(approximation[0])
+                            ii += round(approximation[1])
+                            _image_index += round(approximation[2])
+
+                            # Checking point is inside
+                            if ii < 1 or jj < 1 or ii > height - 2  or jj > width - 2 or _image_index < 1 or _image_index > 3:
+                                check = False
+                                break
+
+                        if check:
+                            response = center_pixel + 0.5 * np.dot(g, approximation)
+                            if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1 :
+                                # Keypoint 
+                                keypoint = cv2.KeyPoint(
+                                (jj+approximation[0]) * (2 ** _octave_index), # X
+                                (ii+approximation[1]) * (2 ** _octave_index) # Y
+                                , 1.6 * (2 ** ((_image_index + approximation[2]) / np.float32(3))) * (2 ** (_octave_index)) #size
+                                , -1 # angle
+                                , abs(response) # response
+                                , _octave_index + _image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
+                                keypoints_with_orientations = computeKeypointsWithOrientations(keypoint, _octave_index, gaussian_images[_octave_index][_image_index])   
+                                keypoints.extend(keypoints_with_orientations)
                             
     return keypoints
 
@@ -389,7 +436,6 @@ def homography(pairs):
     return H
 
 def random_point(matches, k=4):
-    print(len(matches))
     idx = random.sample(range(len(matches)), k)
     point = [matches[i] for i in idx ]
     return np.array(point)
