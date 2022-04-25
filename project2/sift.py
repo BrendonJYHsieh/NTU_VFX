@@ -203,25 +203,21 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
         scale = 1 / np.float32(1 << octave) if octave >= 0 else np.float32(1 << -octave)
         gaussian_image = gaussian_images[octave, layer]
         height, width = gaussian_image.shape
-        point = np.round(scale * array(keypoint.pt)).astype('int')
+        point = np.round(scale * array(keypoint.pt))
         angle = -keypoint.angle
         cos_angle = np.cos(np.deg2rad(angle))
         sin_angle = np.sin(np.deg2rad(angle))
-        row_list = []
-        col_list = []
-        m_list = []
-        orientation_list = []
+        row_list,col_list,m_list,orientation_list = [], [], [], []
 
-        # Descriptor window size (described by half_width) follows OpenCV convention
-        hist_width = 1.5 * scale * keypoint.size
-        half_width = int(min(round(hist_width * sqrt(2) * (window_size + 1) * 0.5) , sqrt(height ** 2 + width ** 2)))    
+        oringe = 1.5 * scale * keypoint.size
+        half = int(min(round(oringe * sqrt(2) * (window_size + 1) * 0.5) , sqrt(height ** 2 + width ** 2)))    
 
-        for i in range(-half_width, half_width + 1):
-            for j in range(-half_width, half_width + 1):
+        for i in range(-half, half + 1):
+            for j in range(-half, half + 1):
                 row_orientation = j * sin_angle + i * cos_angle
                 col_orientation = j * cos_angle - i * sin_angle
-                row = (row_orientation / hist_width) + 0.5 * window_size - 0.5
-                col = (col_orientation / hist_width) + 0.5 * window_size - 0.5
+                row = (row_orientation / oringe) + 0.5 * window_size - 0.5
+                col = (col_orientation / oringe) + 0.5 * window_size - 0.5
                 if row > -1 and row < window_size and col > -1 and col < window_size:
                     window_row = int(round(point[1] + i))
                     window_col = int(round(point[0] + j))
@@ -232,7 +228,7 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
                         theta = np.rad2deg(np.arctan2(Ly, Lx)) % 360
                         row_list.append(np.floor(row))
                         col_list.append(np.floor(col))
-                        m_list.append(np.exp(-0.5 / ((0.5 * window_size) ** 2) * ((row_orientation / hist_width) ** 2 + (col_orientation / hist_width) ** 2)) * m)
+                        m_list.append(np.exp(-0.5 / ((0.5 * window_size) ** 2) * ((row_orientation / oringe) ** 2 + (col_orientation / oringe) ** 2)) * m)
                         orientation_list.append((theta - angle) * 8 / 360.)
 
         descriptor_128 = Trilinear_interpolation(row_list, col_list, orientation_list, m_list)
