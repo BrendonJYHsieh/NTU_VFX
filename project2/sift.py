@@ -76,44 +76,44 @@ def DoG(image):
 # Keypoint scale conversion #
 #############################
 
-def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image, radius_factor=3, num_bins=36, peak_ratio=0.8, scale_factor=1.5):
+def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
     """Compute orientations for each keypoint
     """
     keypoints_with_orientations = []
-    image_shape = gaussian_image.shape
+    height, width = gaussian_image.shape
 
-    scale = scale_factor * keypoint.size / np.float32(2 ** (octave_index))  # compare with keypoint.size computation in localizeExtremumViaQuadraticFit()
-    radius = int(round(radius_factor * scale))
+    scale = 1.5 * keypoint.size  # compare with keypoint.size computation in localizeExtremumViaQuadraticFit()
+
+    radius = int(round(3 * scale))
     weight_factor = -0.5 / (scale ** 2)
-    raw_histogram = zeros(num_bins)
-    smooth_histogram = zeros(num_bins)
+    raw_histogram = zeros(36)
+    smooth_histogram = zeros(36)
 
     for i in range(-radius, radius + 1):
-        region_y = int(round(keypoint.pt[1] /  np.float32(2 ** octave_index))) + i
-        if region_y > 0 and region_y < image_shape[0] - 1:
-            for j in range(-radius, radius + 1):
-                region_x = int(round(keypoint.pt[0] /  np.float32(2 ** octave_index))) + j
-                if region_x > 0 and region_x < image_shape[1] - 1:
-                    dx = gaussian_image[region_y, region_x + 1] - gaussian_image[region_y, region_x - 1]
-                    dy = gaussian_image[region_y - 1, region_x] - gaussian_image[region_y + 1, region_x]
-                    gradient_magnitude = sqrt(dx * dx + dy * dy)
-                    gradient_orientation =  np.rad2deg( np.arctan2(dy, dx))
-                    weight =  np.exp(weight_factor * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
-                    histogram_index = int(round(gradient_orientation * num_bins / 360.))
-                    raw_histogram[histogram_index % num_bins] += weight * gradient_magnitude
+        for j in range(-radius, radius + 1):
+            y = int(round(keypoint.pt[1] /  np.float32(2 ** octave_index))) + i
+            x = int(round(keypoint.pt[0] /  np.float32(2 ** octave_index))) + j
+            if y > 0 and y < height - 1 and x > 0 and x < width - 1:
+                Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
+                Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
+                gradient_magnitude = sqrt(Lx * Lx + Ly * Ly)
+                gradient_orientation =  np.rad2deg( np.arctan2(Ly, Lx))
+                w =  np.exp(weight_factor * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
+                histogram_index = int(round(gradient_orientation * 36 / 360.))
+                raw_histogram[histogram_index % 36] += w * gradient_magnitude
 
-    for n in range(num_bins):
-        smooth_histogram[n] = (6 * raw_histogram[n] + 4 * (raw_histogram[n - 1] + raw_histogram[(n + 1) % num_bins]) + raw_histogram[n - 2] + raw_histogram[(n + 2) % num_bins]) / 16.
+    for n in range(36):
+        smooth_histogram[n] = (6 * raw_histogram[n] + 4 * (raw_histogram[n - 1] + raw_histogram[(n + 1) % 36]) + raw_histogram[n - 2] + raw_histogram[(n + 2) % 36]) / 16.
     orientation_max = max(smooth_histogram)
     orientation_peaks =  np.where( np.logical_and(smooth_histogram >  np.roll(smooth_histogram, 1), smooth_histogram >  np.roll(smooth_histogram, -1)))[0]
     for peak_index in orientation_peaks:
         peak_value = smooth_histogram[peak_index]
-        if peak_value >= peak_ratio * orientation_max:
+        if peak_value >= 0.8 * orientation_max: # 讓description更reliable
             
-            left_value = smooth_histogram[(peak_index - 1) % num_bins]
-            right_value = smooth_histogram[(peak_index + 1) % num_bins]
-            interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % num_bins
-            orientation = 360. - interpolated_peak_index * 360. / num_bins
+            left_value = smooth_histogram[(peak_index - 1) % 36]
+            right_value = smooth_histogram[(peak_index + 1) % 36]
+            interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
+            orientation = 360. - interpolated_peak_index * 360. / 36
             if abs(orientation - 360.) <  float_tolerance:
                 orientation = 0
             new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
@@ -180,7 +180,7 @@ def FindKeypoints(gaussian_images, dogs):
                                 keypoint = cv2.KeyPoint(
                                 (jj+approximation[0]) * (2 ** octave_index), # X
                                 (ii+approximation[1]) * (2 ** octave_index) # Y
-                                , 1.6 * (2 ** ((_image_index + approximation[2]) / np.float32(3))) * (2 ** (octave_index)) #size
+                                , 1.6 * (2 ** ((_image_index + approximation[2]) / np.float32(3))) #size
                                 , -1 # angle
                                 , abs(response) # response
                                 , octave_index + _image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
