@@ -227,11 +227,13 @@ def FindKeypoints(gaussian_images, dogs):
                         _image_index = image_index
                         for iteration in range(5):
                             _image0, _image1, _image2 = dog[_image_index-1:_image_index+2]
-                            _center_pixel = _image1[ ii, jj]
+                            _center_pixel = _image1[ii, jj]
+
                             # Gradient
-                            g = [((_image1[ii  , jj+1] - _image1[ii  , jj-1])/2)/255, 
-                                ((_image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
-                                ((_image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
+                            g = [((image1[ii  , jj+1] - _image1[ii  , jj-1])/2)/255, 
+                                ((image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
+                                ((image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
+
                             # Hessian
                             h = array([
                                 [(_image1[ii  , jj+1] - 2 * _center_pixel + _image1[ii  , jj-1])/255,
