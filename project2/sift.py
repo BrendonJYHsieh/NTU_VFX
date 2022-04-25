@@ -204,9 +204,8 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
         gaussian_image = gaussian_images[octave, layer]
         height, width = gaussian_image.shape
         point = np.round(scale * array(keypoint.pt))
-        angle = -keypoint.angle
-        cos_angle = np.cos(np.deg2rad(angle))
-        sin_angle = np.sin(np.deg2rad(angle))
+        cos_angle = np.cos(np.deg2rad(-keypoint.angle))
+        sin_angle = np.sin(np.deg2rad(-keypoint.angle))
         row_list,col_list,m_list,orientation_list = [], [], [], []
 
         oringe = 1.5 * scale * keypoint.size
@@ -219,17 +218,16 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
                 row = (row_orientation / oringe) + 0.5 * window_size - 0.5
                 col = (col_orientation / oringe) + 0.5 * window_size - 0.5
                 if row > -1 and row < window_size and col > -1 and col < window_size:
-                    window_row = int(round(point[1] + i))
-                    window_col = int(round(point[0] + j))
+                    window_row, window_col = round(point[1] + i), round(point[0] + j)
                     if window_row > 0 and window_row < height - 1 and window_col > 0 and window_col < width - 1:
                         Lx = gaussian_image[window_row, window_col + 1] - gaussian_image[window_row, window_col - 1]
                         Ly = gaussian_image[window_row - 1, window_col] - gaussian_image[window_row + 1, window_col]
                         m = sqrt(Lx * Lx + Ly * Ly)
                         theta = np.rad2deg(np.arctan2(Ly, Lx)) % 360
-                        row_list.append(np.floor(row))
-                        col_list.append(np.floor(col))
+                        row_list.append(row)
+                        col_list.append(col)
                         m_list.append(np.exp(-0.5 / ((0.5 * window_size) ** 2) * ((row_orientation / oringe) ** 2 + (col_orientation / oringe) ** 2)) * m)
-                        orientation_list.append((theta - angle) * 8 / 360.)
+                        orientation_list.append((theta + keypoint.angle) * 8 / 360.)
 
         descriptor_128 = Trilinear_interpolation(row_list, col_list, orientation_list, m_list)
 
