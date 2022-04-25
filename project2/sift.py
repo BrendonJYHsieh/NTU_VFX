@@ -24,15 +24,15 @@ def Dog_visualization(layers):
             max_width= i[0].shape[1]
     height = total_height
     width = max_width
-    image = np.zeros((height, width*6, 3), np.uint8)
+    newimg = np.zeros((height, width*6, 3), np.uint8)
     amount = 0
     for l in layers:
         for i in range(0,len(l)):
             for j in range(3):
                 h, w = l[i].shape
-                image[amount:h+amount,w*i:w*(i+1),j]=l[i] 
+                newimg[amount:h+amount,w*i:w*(i+1),j]=l[i] 
         amount += l[0].shape[0]
-    plt.imshow(image)
+    plt.imshow(newimg)
     plt.show()
 
 def DoG(image):
@@ -113,7 +113,6 @@ def localizeExtremumViaQuadraticFit(i, j, image_index, octave_index, dog_images_
     for iteration in range(5):
         image0, image1, image2 = dog_images_in_octave[image_index-1:image_index+2]
         center_pixel = image1[ i, j]
-
         # Gradient
         g = [((image1[i  , j+1] - image1[i  , j-1])/2)/255, 
              ((image1[i+1, j  ] - image1[i-1, j  ])/2)/255, 
@@ -143,33 +142,23 @@ def localizeExtremumViaQuadraticFit(i, j, image_index, octave_index, dog_images_
             return None
 
     response = center_pixel + 0.5 * np.dot(g, approximation)
-    if abs(response) * 3 >= 0.04:
-        H_Tr  = h[0,0] + h[1,1]
-        H_Det = h[0,0] * h[1,1] - h[0,1] * h[0,1]
-        if (H_Tr ** 2) / H_Det < 12.1 :
-            # Keypoint 
-            keypoint = cv2.KeyPoint()
-            keypoint.pt = ((j + approximation[0]) * (2 ** octave_index), (i + approximation[1]) * (2 ** octave_index))
-            keypoint.octave = octave_index + image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)
-            keypoint.size = 1.6 * (2 ** ((image_index + approximation[2]) / np.float32(3))) * (2 ** (octave_index + 1))  # octave_index + 1 because the input image was doubled
-            keypoint.response = abs(response)
-            return keypoint, image_index
+    H_Tr  = h[0,0] + h[1,1]
+    H_Det = h[0,0] * h[1,1] - h[0,1] * h[0,1]
+    if (H_Tr ** 2) / H_Det < 12.1 :
+        # Keypoint 
+        keypoint = cv2.KeyPoint(
+        (j+approximation[0]) * (2 ** octave_index), # X
+        (i+approximation[1]) * (2 ** octave_index) # Y
+        , 1.6 * (2 ** ((image_index + approximation[2]) / np.float32(3))) * (2 ** (octave_index)) #size
+        , -1 # angle
+        , abs(response) # response
+        , octave_index + image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
+        return keypoint, image_index
     return None
 
 #############################
 # Keypoint scale conversion #
 #############################
-
-def convertKeypointsToInputImageSize(keypoints):
-    """Convert keypoint point, size, and octave to input image size
-    """
-    converted_keypoints = []
-    for keypoint in keypoints:
-        keypoint.pt = tuple(0.5 * array(keypoint.pt))
-        keypoint.size *= 0.5
-        keypoint.octave = (keypoint.octave & ~255) | ((keypoint.octave - 1) & 255)
-        converted_keypoints.append(keypoint) 
-    return converted_keypoints
 
 def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image, radius_factor=3, num_bins=36, peak_ratio=0.8, scale_factor=1.5):
     """Compute orientations for each keypoint
@@ -177,7 +166,7 @@ def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image, rad
     keypoints_with_orientations = []
     image_shape = gaussian_image.shape
 
-    scale = scale_factor * keypoint.size / np.float32(2 ** (octave_index + 1))  # compare with keypoint.size computation in localizeExtremumViaQuadraticFit()
+    scale = scale_factor * keypoint.size / np.float32(2 ** (octave_index))  # compare with keypoint.size computation in localizeExtremumViaQuadraticFit()
     radius = int(round(radius_factor * scale))
     weight_factor = -0.5 / (scale ** 2)
     raw_histogram = zeros(num_bins)
@@ -255,7 +244,7 @@ def generateDescriptors(keypoints, gaussian_images, window_width=4, num_bins=8, 
 
     for keypoint in keypoints:
         octave, layer, scale = unpackOctave(keypoint)
-        gaussian_image = gaussian_images[octave + 1, layer]
+        gaussian_image = gaussian_images[octave, layer]
         num_rows, num_cols = gaussian_image.shape
         point = np.round(scale * array(keypoint.pt)).astype('int')
         bins_per_degree = num_bins / 360.
@@ -342,14 +331,12 @@ def generateDescriptors(keypoints, gaussian_images, window_width=4, num_bins=8, 
     return array(descriptors, dtype='float32')
 
 def SIFT(path):
-    image = cv2.imread(path,cv2.IMREAD_GRAYSCALE)
-    image = image.astype('float32')
-    image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    image = cv2.imread(path,cv2.IMREAD_GRAYSCALE).astype('float32')
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(image)
     keypoints = FindKeypoints(gaussian,dog)
-    keypoints = removeDuplicateKeypoints(keypoints)
-    keypoints = convertKeypointsToInputImageSize(keypoints)
+    #keypoints = removeDuplicateKeypoints(keypoints)
+    #keypoints = convertKeypointsToInputImageSize(keypoints)
     descriptors = generateDescriptors(keypoints, gaussian)
     return keypoints,descriptors
 
@@ -402,6 +389,7 @@ def homography(pairs):
     return H
 
 def random_point(matches, k=4):
+    print(len(matches))
     idx = random.sample(range(len(matches)), k)
     point = [matches[i] for i in idx ]
     return np.array(point)
@@ -505,13 +493,13 @@ def stitch_img(left, right, H):
 
 start = time.time()
 
-left_rgb = cv2.imread("prtn1000.jpg")
+left_rgb = cv2.imread("prtn10.jpg")
 left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("prtn1100.jpg")
+right_rgb = cv2.imread("prtn11.jpg")
 right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-kp_left, des_left = SIFT("prtn1000.jpg")
-kp_right, des_right = SIFT("prtn1100.jpg")
+kp_left, des_left = SIFT("prtn10.jpg")
+kp_right, des_right = SIFT("prtn11.jpg")
 
 matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb, 0.5)
 
