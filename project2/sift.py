@@ -1,6 +1,3 @@
-from math import floor
-from operator import index
-from telnetlib import PRAGMA_HEARTBEAT
 import cv2
 import numpy as np
 import time
@@ -10,7 +7,6 @@ from cv2 import GaussianBlur,sqrt,resize
 from matplotlib import pyplot as plt
 from numpy import array, zeros,sqrt,log,subtract,all
 from numpy.linalg import lstsq, norm
-from functools import cmp_to_key
 
 float_tolerance = 1e-7
 
@@ -80,20 +76,19 @@ def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
     scale = 1.5 * keypoint.size  
 
     radius = int(round(3 * scale))
-    weight_factor = -0.5 / (scale ** 2)
     histogram = zeros(36)
 
     for i in range(-radius, radius + 1):
         for j in range(-radius, radius + 1):
-            y = int(round(keypoint.pt[1] /  np.float32(2 ** octave_index))) + i
-            x = int(round(keypoint.pt[0] /  np.float32(2 ** octave_index))) + j
+            y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + i
+            x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + j
             if y > 0 and y < height - 1 and x > 0 and x < width - 1:
                 Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
                 Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
                 gradient_magnitude = sqrt(Lx * Lx + Ly * Ly)
                 gradient_orientation =  np.rad2deg( np.arctan2(Ly, Lx))
-                w =  np.exp(weight_factor * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
-                histogram_index = int(round(gradient_orientation * 36 / 360.))
+                w =  np.exp(-0.5 / (scale ** 2) * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
+                histogram_index = int(round(gradient_orientation / 10.))
                 histogram[histogram_index % 36] += w * gradient_magnitude
 
     orientation_max = max(histogram)
@@ -101,13 +96,10 @@ def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
     for peak_index in orientation_peaks:
         peak_value = histogram[peak_index]
         if peak_value >= 0.8 * orientation_max: # 讓description更reliable
-            
             left_value = histogram[(peak_index - 1) % 36]
             right_value = histogram[(peak_index + 1) % 36]
             interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
             orientation = 360. - interpolated_peak_index * 360. / 36
-            if abs(orientation - 360.) <  float_tolerance:
-                orientation = 0
             new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
             keypoints.append(new_keypoint)
     return keypoints
