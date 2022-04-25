@@ -107,38 +107,38 @@ def removeDuplicateKeypoints(keypoints):
             unique_keypoints.append(next_keypoint)
     return unique_keypoints
 
-def localizeExtremumViaQuadraticFit(i, j, image_index, octave_index, dog_images_in_octave):
+def localizeExtremumViaQuadraticFit(ii, j, image_index, octave_index, dog_images_in_octave):
 
     image_shape = dog_images_in_octave[0].shape
     for iteration in range(5):
         image0, image1, image2 = dog_images_in_octave[image_index-1:image_index+2]
-        center_pixel = image1[ i, j]
+        center_pixel = image1[ ii, j]
         # Gradient
-        g = [((image1[i  , j+1] - image1[i  , j-1])/2)/255, 
-             ((image1[i+1, j  ] - image1[i-1, j  ])/2)/255, 
-             ((image2[i  , j  ] - image0[i  , j  ])/2)/255]
+        g = [((image1[ii  , j+1] - image1[ii  , j-1])/2)/255, 
+             ((image1[ii+1, j  ] - image1[ii-1, j  ])/2)/255, 
+             ((image2[ii  , j  ] - image0[ii  , j  ])/2)/255]
 
         # Hessian
         h = array([
-            [(image1[i  , j+1] - 2 * center_pixel + image1[i  , j-1])/255,
-             (image1[i+1, j+1] - image1[i+1, j-1] - image1[i-1, j+1] + image1[i-1, j-1])/4/255,
-             (image2[i  , j+1] - image2[i  , j-1] - image0[i  , j+1] + image0[i  , j-1])/4/255], 
-            [(image1[i+1, j+1] - image1[i+1, j-1] - image1[i-1, j+1] + image1[i-1, j-1])/4/255,
-             (image1[i+1, j  ] - 2 * center_pixel + image1[i-1, j  ])/255,
-             (image2[i+1, j  ] - image2[i-1, j  ] - image0[i+1, j  ] + image0[i-1, j  ])/4/255],
-            [(image2[i  , j+1] - image2[i  , j-1] - image0[i  , j+1] + image0[i  , j-1])/4/255, 
-             (image2[i+1, j  ] - image2[i-1, j  ] - image0[i+1, j  ] + image0[i-1, j  ])/4/255, 
-             (image2[i  , j  ] - 2 * center_pixel + image0[i  , j  ])/255]])
+            [(image1[ii  , j+1] - 2 * center_pixel + image1[ii  , j-1])/255,
+             (image1[ii+1, j+1] - image1[ii+1, j-1] - image1[ii-1, j+1] + image1[ii-1, j-1])/4/255,
+             (image2[ii  , j+1] - image2[ii  , j-1] - image0[ii  , j+1] + image0[ii  , j-1])/4/255], 
+            [(image1[ii+1, j+1] - image1[ii+1, j-1] - image1[ii-1, j+1] + image1[ii-1, j-1])/4/255,
+             (image1[ii+1, j  ] - 2 * center_pixel + image1[ii-1, j  ])/255,
+             (image2[ii+1, j  ] - image2[ii-1, j  ] - image0[ii+1, j  ] + image0[ii-1, j  ])/4/255],
+            [(image2[ii  , j+1] - image2[ii  , j-1] - image0[ii  , j+1] + image0[ii  , j-1])/4/255, 
+             (image2[ii+1, j  ] - image2[ii-1, j  ] - image0[ii+1, j  ] + image0[ii-1, j  ])/4/255, 
+             (image2[ii  , j  ] - 2 * center_pixel + image0[ii  , j  ])/255]])
 
         approximation = -lstsq(h, g, rcond=None)[0]
         if all(abs(approximation)<0.5):
             break
         j += round(approximation[0])
-        i += round(approximation[1])
+        ii += round(approximation[1])
         image_index += round(approximation[2])
 
         # Checking point is inside
-        if i < 1 or j < 1 or i > image_shape[0] - 2  or j > image_shape[1] - 2 or image_index < 1 or image_index > 3:
+        if ii < 1 or j < 1 or ii > image_shape[0] - 2  or j > image_shape[1] - 2 or image_index < 1 or image_index > 3:
             return None
 
     response = center_pixel + 0.5 * np.dot(g, approximation)
@@ -148,7 +148,7 @@ def localizeExtremumViaQuadraticFit(i, j, image_index, octave_index, dog_images_
         # Keypoint 
         keypoint = cv2.KeyPoint(
         (j+approximation[0]) * (2 ** octave_index), # X
-        (i+approximation[1]) * (2 ** octave_index) # Y
+        (ii+approximation[1]) * (2 ** octave_index) # Y
         , 1.6 * (2 ** ((image_index + approximation[2]) / np.float32(3))) * (2 ** (octave_index)) #size
         , -1 # angle
         , abs(response) # response
@@ -224,7 +224,6 @@ def FindKeypoints(gaussian_images, dogs):
                     if(check):
                         ii = i
                         jj = j
-                        check = True
                         _image_index = image_index
                         _octave_index = octave_index
                         for iteration in range(5):
@@ -232,21 +231,21 @@ def FindKeypoints(gaussian_images, dogs):
                             center_pixel = image1[ii, jj]
                             # Gradient
                             g = [((image1[ii  , jj+1] - image1[ii  , jj-1])/2)/255, 
-                                ((image1[ii+1, jj  ] - image1[ii-1, jj  ])/2)/255, 
-                                ((image2[ii  , jj  ] - image0[ii  , jj  ])/2)/255]
+                                 ((image1[ii+1, jj  ] - image1[ii-1, jj  ])/2)/255, 
+                                 ((image2[ii  , jj  ] - image0[ii  , jj  ])/2)/255]
                             # Hessian
                             h = array([
-                                [(image1[ii  , jj+1] - 2 * center_pixel + image1[ii  , jj-1])/255,
+                                [(image1[ii  , jj+1] - 2 * center_pixel +   image1[ii  , jj-1])/255,
                                  (image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
                                  (image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255
                                 ], 
                                 [(image1[ii+1, jj+1] - image1[ii+1, jj-1] - image1[ii-1, jj+1] + image1[ii-1, jj-1])/4/255,
-                                 (image1[ii+1, jj  ] - 2 * center_pixel + image1[ii-1, jj  ])/255,
+                                 (image1[ii+1, jj  ] - 2 * center_pixel +   image1[ii-1, jj  ])/255,
                                  (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255]
                                 ,
                                 [(image2[ii  , jj+1] - image2[ii  , jj-1] - image0[ii  , jj+1] + image0[ii  , jj-1])/4/255, 
                                  (image2[ii+1, jj  ] - image2[ii-1, jj  ] - image0[ii+1, jj  ] + image0[ii-1, jj  ])/4/255, 
-                                 (image2[ii  , jj  ] - 2 * center_pixel + image0[ii  , jj  ])/255]])
+                                 (image2[ii  , jj  ] - 2 * center_pixel +   image0[ii  , jj  ])/255]])
 
                             approximation = -lstsq(h, g, rcond=None)[0]
                             if all(abs(approximation)<0.5):
@@ -254,7 +253,6 @@ def FindKeypoints(gaussian_images, dogs):
                             jj += round(approximation[0])
                             ii += round(approximation[1])
                             _image_index += round(approximation[2])
-
                             # Checking point is inside
                             if ii < 1 or jj < 1 or ii > height - 2  or jj > width - 2 or _image_index < 1 or _image_index > 3:
                                 check = False
@@ -272,8 +270,7 @@ def FindKeypoints(gaussian_images, dogs):
                                 , abs(response) # response
                                 , _octave_index + _image_index * (2 ** 8) + int(round((approximation[2] + 0.5) * 255)) * (2 ** 16)) # octave
                                 keypoints_with_orientations = computeKeypointsWithOrientations(keypoint, _octave_index, gaussian_images[_octave_index][_image_index])   
-                                keypoints.extend(keypoints_with_orientations)
-                            
+                                keypoints.extend(keypoints_with_orientations)                      
     return keypoints
 
 def unpackOctave(keypoint):
