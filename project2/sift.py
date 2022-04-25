@@ -72,22 +72,16 @@ def DoG(image):
 
     return array(gaussian_images, dtype=object), dog_images
 
-#############################
-# Keypoint scale conversion #
-#############################
-
 def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
-    """Compute orientations for each keypoint
-    """
-    keypoints_with_orientations = []
+
+    keypoints = []
     height, width = gaussian_image.shape
 
-    scale = 1.5 * keypoint.size  # compare with keypoint.size computation in localizeExtremumViaQuadraticFit()
+    scale = 1.5 * keypoint.size  
 
     radius = int(round(3 * scale))
     weight_factor = -0.5 / (scale ** 2)
-    raw_histogram = zeros(36)
-    smooth_histogram = zeros(36)
+    histogram = zeros(36)
 
     for i in range(-radius, radius + 1):
         for j in range(-radius, radius + 1):
@@ -100,25 +94,23 @@ def computeKeypointsWithOrientations(keypoint, octave_index, gaussian_image):
                 gradient_orientation =  np.rad2deg( np.arctan2(Ly, Lx))
                 w =  np.exp(weight_factor * (i ** 2 + j ** 2))  # constant in front of exponential can be dropped because we will find peaks later
                 histogram_index = int(round(gradient_orientation * 36 / 360.))
-                raw_histogram[histogram_index % 36] += w * gradient_magnitude
+                histogram[histogram_index % 36] += w * gradient_magnitude
 
-    for n in range(36):
-        smooth_histogram[n] = (6 * raw_histogram[n] + 4 * (raw_histogram[n - 1] + raw_histogram[(n + 1) % 36]) + raw_histogram[n - 2] + raw_histogram[(n + 2) % 36]) / 16.
-    orientation_max = max(smooth_histogram)
-    orientation_peaks =  np.where( np.logical_and(smooth_histogram >  np.roll(smooth_histogram, 1), smooth_histogram >  np.roll(smooth_histogram, -1)))[0]
+    orientation_max = max(histogram)
+    orientation_peaks =  np.where( np.logical_and(histogram >  np.roll(histogram, 1), histogram >  np.roll(histogram, -1)))[0]
     for peak_index in orientation_peaks:
-        peak_value = smooth_histogram[peak_index]
+        peak_value = histogram[peak_index]
         if peak_value >= 0.8 * orientation_max: # 讓description更reliable
             
-            left_value = smooth_histogram[(peak_index - 1) % 36]
-            right_value = smooth_histogram[(peak_index + 1) % 36]
+            left_value = histogram[(peak_index - 1) % 36]
+            right_value = histogram[(peak_index + 1) % 36]
             interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
             orientation = 360. - interpolated_peak_index * 360. / 36
             if abs(orientation - 360.) <  float_tolerance:
                 orientation = 0
             new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-            keypoints_with_orientations.append(new_keypoint)
-    return keypoints_with_orientations
+            keypoints.append(new_keypoint)
+    return keypoints
 
 def FindKeypoints(gaussian_images, dogs):
     keypoints = []
