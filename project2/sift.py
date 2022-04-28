@@ -21,7 +21,7 @@ def Dog_visualization(layers):
             max_width= i[0].shape[1]
     height = total_height
     width = max_width
-    newimg = np.zeros((height, width*6, 3), np.uint8)
+    newimg = np.zeros((height, width*5, 3), np.uint8)
     amount = 0
     for l in layers:
         for i in range(0,len(l)):
@@ -47,7 +47,7 @@ def DoG(image):
 
     # Generate Gaussian Images
 
-    num_of_octave = round(log(min(image.shape)) / log(2) - 1)
+    num_of_octave = int((log(min(image.shape)) / log(2)) - 2)
     gaussian_images = []
     for i in range(num_of_octave):
         gaussian_images_in_octave = []
@@ -55,18 +55,18 @@ def DoG(image):
         for sigma in gaussian_sigmas:
             image = GaussianBlur(image, (0, 0), sigmaX=sigma, sigmaY=sigma)
             gaussian_images_in_octave.append(image)
-        blur_image = gaussian_images_in_octave[-3]
-        image = resize(blur_image, (int(blur_image.shape[1] / 2), int(blur_image.shape[0] / 2)), interpolation=cv2.INTER_NEAREST)
+        next_octave_image = gaussian_images_in_octave[-3] # k^3 sigma
+        image = resize(next_octave_image, (int(next_octave_image.shape[1] / 2), int(next_octave_image.shape[0] / 2)), interpolation=cv2.INTER_NEAREST)
         gaussian_images.append(gaussian_images_in_octave)
      
     # Generate DOG
 
     dog_images = []
     for i in gaussian_images:
-        sub_images = []
+        subtract_images = []
         for j in range(1,len(i)):
-            sub_images.append(subtract(i[j],i[j-1]))
-        dog_images.append(sub_images)
+            subtract_images.append(subtract(i[j],i[j-1]))
+        dog_images.append(subtract_images)
 
     return array(gaussian_images, dtype=object), dog_images
 
@@ -76,91 +76,119 @@ def Find_Keypoints(gaussian_images, dogs):
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
             height , width = image0.shape
-            for i in range(1, height - 3):
-                for j in range(1, width - 3):
+            for i in range(1, height - 2):
+                for j in range(1, width - 2):
                     center_pixel = image1[i,j]
-                    check = False
+                    extremum_exist = False
                     if (abs(center_pixel)>1):
                         if(center_pixel>0):
                             if(all(center_pixel >= image0[i-1:i+2, j-1:j+2]) and all(center_pixel >= image1[i-1:i+2, j-1:j+2]) and all(center_pixel >= image2[i-1:i+2, j-1:j+2])):
-                                check = True
+                                extremum_exist = True
                         else:
                             if(all(center_pixel <= image0[i-1:i+2, j-1:j+2]) and all(center_pixel <= image1[i-1:i+2, j-1:j+2]) and all(center_pixel <= image2[i-1:i+2, j-1:j+2])):
-                                check = True
-                    if(check):
+                                extremum_exist = True
+
+                    if(extremum_exist):
                         ii = i
                         jj = j
                         _image_index = image_index
                         for iteration in range(5):
+
                             _image0, _image1, _image2 = dog[_image_index-1:_image_index+2]
                             _center_pixel = _image1[ii, jj]
 
                             # Gradient
                             g = [((_image1[ii  , jj+1] - _image1[ii  , jj-1])/2)/255, 
-                                ((_image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
-                                ((_image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
+                                 ((_image1[ii+1, jj  ] - _image1[ii-1, jj  ])/2)/255, 
+                                 ((_image2[ii  , jj  ] - _image0[ii  , jj  ])/2)/255]
 
                             # Hessian
                             h = array([
                                 [(_image1[ii  , jj+1] - 2 * _center_pixel + _image1[ii  , jj-1])/255,
-                                (_image1[ii+1, jj+1] - _image1[ii+1, jj-1] - _image1[ii-1, jj+1] + _image1[ii-1, jj-1])/4/255,
-                                (_image2[ii  , jj+1] - _image2[ii  , jj-1] - _image0[ii  , jj+1] + _image0[ii  , jj-1])/4/255], 
+                                 (_image1[ii+1, jj+1] - _image1[ii+1, jj-1] - _image1[ii-1, jj+1] + _image1[ii-1, jj-1])/4/255,
+                                 (_image2[ii  , jj+1] - _image2[ii  , jj-1] - _image0[ii  , jj+1] + _image0[ii  , jj-1])/4/255], 
                                 [(_image1[ii+1, jj+1] - _image1[ii+1, jj-1] - _image1[ii-1, jj+1] + _image1[ii-1, jj-1])/4/255,
-                                (_image1[ii+1, jj  ] - 2 * _center_pixel + _image1[ii-1, jj  ])/255,
-                                (_image2[ii+1, jj  ] - _image2[ii-1, jj  ] - _image0[ii+1, jj  ] + _image0[ii-1, jj  ])/4/255],
+                                 (_image1[ii+1, jj  ] - 2 * _center_pixel + _image1[ii-1, jj  ])/255,
+                                 (_image2[ii+1, jj  ] - _image2[ii-1, jj  ] - _image0[ii+1, jj  ] + _image0[ii-1, jj  ])/4/255],
                                 [(_image2[ii  , jj+1] - _image2[ii  , jj-1] - _image0[ii  , jj+1] + _image0[ii  , jj-1])/4/255, 
-                                (_image2[ii+1, jj  ] - _image2[ii-1, jj  ] - _image0[ii+1, jj  ] + _image0[ii-1, jj  ])/4/255, 
-                                (_image2[ii  , jj  ] - 2 * _center_pixel + _image0[ii  , jj  ])/255]])
+                                 (_image2[ii+1, jj  ] - _image2[ii-1, jj  ] - _image0[ii+1, jj  ] + _image0[ii-1, jj  ])/4/255, 
+                                 (_image2[ii  , jj  ] - 2 * _center_pixel + _image0[ii  , jj  ])/255]])
 
                             approximation = -lstsq(h, g, rcond=None)[0]
-                            if all(abs(approximation)<0.5):
+
+                            # Good enough can, so no need to find
+                            if all(abs(approximation)<0.5): 
                                 break
+
                             jj += round(approximation[0])
                             ii += round(approximation[1])
                             _image_index += round(approximation[2])
 
-                            # Checking point is inside
-                            if ii < 1 or jj < 1 or ii > height - 1  or jj > width - 1 or _image_index < 1 or _image_index > 3: 
-                                check = False
+                            # extremum_existing point is inside or not convergence
+                            if iteration == 4 or ii < 1 or jj < 1 or ii > height - 1  or jj > width - 1 or _image_index < 1 or _image_index > 3: 
+                                extremum_exist = False
                                 break
-                        if check:
+
+                        if extremum_exist:
                             response = _center_pixel + 0.5 * np.dot(g, approximation)
-                            
-                            if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1:
-                                # Keypoint 
-                                keypoint = cv2.KeyPoint(
-                                (jj+approximation[0]) * (2 ** octave_index), # X
-                                (ii+approximation[1]) * (2 ** octave_index) # Y
-                                , 1.6 * (2 ** ((_image_index + approximation[2]) / np.float32(3))) #size
-                                , -1 # angle
-                                , abs(response) # response
-                                , octave_index + _image_index * (2 ** 8)) # octave
 
-                                gaussian_image = gaussian_images[octave_index][_image_index]
-                                height, width = gaussian_image.shape
-                                scale = 1.5 * keypoint.size  
-                                radius = int(round(3 * scale))
-                                histogram = zeros(36)
+                            # delete low constrast
+                            if np.abs(response * 3) > 0.04:
+                                # eliminate edge effect
+                                if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1:
+                                    # Keypoint 
+                                    keypoint = cv2.KeyPoint(
+                                    (jj+approximation[0]) * (2 ** octave_index), # X
+                                    (ii+approximation[1]) * (2 ** octave_index) # Y
+                                    , 1.6 * (2 ** ((_image_index + approximation[2]) / 3.)) #size
+                                    , -1 # angle
+                                    , abs(response) # response
+                                    , octave_index + _image_index * (2 ** 8)) # octave
 
-                                for a in range(-radius, radius + 1):
-                                    for b in range(-radius, radius + 1):
-                                        y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + a
-                                        x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + b
-                                        if y > 0 and y < height - 1 and x > 0 and x < width - 1:
-                                            Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
-                                            Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
-                                            m = sqrt(Lx * Lx + Ly * Ly)
-                                            theta =  np.rad2deg( np.arctan2(Ly, Lx))
-                                            histogram_index = int(round(theta / 10.))
-                                            histogram[histogram_index % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m
+                                    gaussian_image = gaussian_images[octave_index][_image_index]
+                                    height, width = gaussian_image.shape
+                                    scale = 1.5 * keypoint.size  
+                                    radius = round(3 * scale)
+                                    histogram = zeros(36)
+                                    smooth_histogram = zeros(36)
+                                    for a in range(-radius, radius + 1):
+                                        for b in range(-radius, radius + 1):
+                                            y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + a
+                                            x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + b
+                                            if y > 0 and y < height - 1 and x > 0 and x < width - 1:
+                                                Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
+                                                Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
+                                                m = sqrt(Lx * Lx + Ly * Ly)
+                                                theta =  np.rad2deg( np.arctan2(Ly, Lx))
+                                                histogram_index = int(round(theta / 10.))
+                                                histogram[histogram_index % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m
 
-                                orientation_max = max(histogram)
-                                for peak_index in range(len(histogram)):
-                                    if histogram[peak_index] >= 0.8 * orientation_max: # Make description more reliable
-                                        orientation = 360. - (peak_index + 0.5 * (histogram[(peak_index - 1) % 36] - histogram[(peak_index + 1) % 36]) 
-                                                    / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
-                                        new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-                                        keypoints.append(new_keypoint)           
+                                    orientation_max = max(histogram)
+                                    for peak_index in range(len(histogram)):
+                                        if histogram[peak_index] >= 0.8 * orientation_max: # Make description more reliable
+                                            orientation = 360. - (peak_index + 0.5 * (histogram[(peak_index - 1) % 36] - histogram[(peak_index + 1) % 36]) 
+                                                        / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
+                                            new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
+                                            keypoints.append(new_keypoint)
+
+                                            
+                                    # for n in range(36):
+                                    #     smooth_histogram[n] = (6 * histogram[n] + 4 * (histogram[n - 1] + histogram[(n + 1) % 36]) + histogram[n - 2] + histogram[(n + 2) % 36]) / 16.
+                                    # orientation_max = max(smooth_histogram)
+                                    # orientation_peaks = np.where(np.logical_and(smooth_histogram > np.roll(smooth_histogram, 1), smooth_histogram > np.roll(smooth_histogram, -1)))[0]
+                                    # for peak_index in orientation_peaks:
+                                    #     peak_value = smooth_histogram[peak_index]
+                                    #     if peak_value >= 0.8 * orientation_max:
+                                    #         # Quadratic peak interpolation
+                                    #         # The interpolation update is given by equation (6.30) in https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
+                                    #         left_value = smooth_histogram[(peak_index - 1) % 36]
+                                    #         right_value = smooth_histogram[(peak_index + 1) % 36]
+                                    #         interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
+                                    #         orientation = 360. - interpolated_peak_index * 360. / 36
+                                    #         if abs(orientation - 360.) < float_tolerance:
+                                    #             orientation = 0
+                                    #         new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
+                                    #         keypoints.append(new_keypoint)     
     return keypoints
 
 def Trilinear_interpolation(row_list, col_list, orientation_list, m_list):
@@ -258,8 +286,10 @@ def SIFT(path):
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(image)
     keypoints = Find_Keypoints(gaussian,dog)
-    descriptors = Generate_Descriptors(keypoints, gaussian)
-    return keypoints,descriptors
+    #descriptors = Generate_Descriptors(keypoints, gaussian)
+    #return keypoints,descriptors
+
+    return keypoints
 
 def matcher(kp1, des1, img1, kp2, des2, img2, threshold = 0.5):
     #BFMatcher with default params
@@ -442,25 +472,36 @@ def plot_matches(matches, total_img):
 
 start = time.time()
 
-left_rgb = cv2.imread("NTUST1.png")
-left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("NTUST2.png")
-right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
+# left_rgb = cv2.imread("instance.png")
+# left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
+# right_rgb = cv2.imread("NTUST2.png")
+# right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-kp_left, des_left = SIFT("NTUST1.png")
-kp_right, des_right = SIFT("NTUST2.png")
+# kp_left, des_left = SIFT("instance.png")
+# kp_right, des_right = SIFT("NTUST2.png")
 
-matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
 
-total_img = np.concatenate((left_rgb, right_rgb), axis=1)
-plot_matches(matches, total_img) # Good mathces
-inliers, H = ransac(matches, 0.5, 2000)
 
-plt.imshow(stitch_img(left_rgb, right_rgb, H))
+# matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
 
-# for i in keypoints_left:
-#     cv2.circle(image0, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+# total_img = np.concatenate((left_rgb, right_rgb), axis=1)
+# plot_matches(matches, total_img) # Good mathces
+# inliers, H = ransac(matches, 0.5, 2000)
+
+# plt.imshow(stitch_img(left_rgb, right_rgb, H))
+
+
+image0 = cv2.imread("box.png")
+image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
+keypoints = SIFT("box.png")
+for i in keypoints:
+    cv2.circle(image0, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+
+plt.imshow(image0)
+plt.show()
+
+
 end = time.time()
 print(end - start)
-plt.show()
+
 #Dog_visualization(dog)

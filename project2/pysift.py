@@ -340,7 +340,6 @@ def generateDescriptors(keypoints, gaussian_images, window_width=4, num_bins=8, 
     for keypoint in keypoints:
         octave, layer, scale = unpackOctave(keypoint)
         gaussian_image = gaussian_images[octave + 1, layer]
-        
         num_rows, num_cols = gaussian_image.shape
         point = round(scale * array(keypoint.pt)).astype('int')
         bins_per_degree = num_bins / 360.
