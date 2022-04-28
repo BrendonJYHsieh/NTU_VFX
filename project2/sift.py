@@ -1,4 +1,6 @@
+from operator import le
 import cv2
+import sys
 import numpy as np
 import time
 import random
@@ -74,8 +76,8 @@ def Find_Keypoints(gaussian_images, dogs):
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
             height , width = image0.shape
-            for i in range(1, height - 2):
-                for j in range(1, width - 2):
+            for i in range(1, height - 3):
+                for j in range(1, width - 3):
                     center_pixel = image1[i,j]
                     check = False
                     if (abs(center_pixel)>1):
@@ -118,12 +120,13 @@ def Find_Keypoints(gaussian_images, dogs):
                             _image_index += round(approximation[2])
 
                             # Checking point is inside
-                            if ii < 1 or jj < 1 or ii > height - 1  or jj > width - 1 or _image_index < 1 or _image_index > 3:
+                            if ii < 1 or jj < 1 or ii > height - 1  or jj > width - 1 or _image_index < 1 or _image_index > 3: 
                                 check = False
                                 break
                         if check:
                             response = _center_pixel + 0.5 * np.dot(g, approximation)
-                            if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1 :
+                            
+                            if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1:
                                 # Keypoint 
                                 keypoint = cv2.KeyPoint(
                                 (jj+approximation[0]) * (2 ** octave_index), # X
@@ -157,10 +160,11 @@ def Find_Keypoints(gaussian_images, dogs):
                                         orientation = 360. - (peak_index + 0.5 * (histogram[(peak_index - 1) % 36] - histogram[(peak_index + 1) % 36]) 
                                                     / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
                                         new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-                                        keypoints.append(new_keypoint)               
+                                        keypoints.append(new_keypoint)           
     return keypoints
+
 def Trilinear_interpolation(row_list, col_list, orientation_list, m_list):
-    histogram = zeros((6, 6, 8))   # first two dimensions are increased by 2 to account for border effects
+    histogram = zeros((6, 6, 8))   
     for i, j, k, m  in zip(row_list, col_list, orientation_list, m_list):
             ii, jj, kk = np.floor([i, j, k]).astype(int)
 
@@ -194,18 +198,24 @@ def Trilinear_interpolation(row_list, col_list, orientation_list, m_list):
             histogram[ii + 2, jj + 2, (kk + 1) % 8] += c111
 
     return histogram[1:-1, 1:-1, :].flatten()
+
 def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
+
     descriptors = []
 
     for keypoint in keypoints:
         octave = keypoint.octave & 255
         layer = (keypoint.octave >> 8) & 255
         scale = 1 / np.float32(1 << octave) if octave >= 0 else np.float32(1 << -octave)
+
         gaussian_image = gaussian_images[octave, layer]
+
         height, width = gaussian_image.shape
         point = np.round(scale * array(keypoint.pt))
+
         cos_angle = np.cos(np.deg2rad(-keypoint.angle))
         sin_angle = np.sin(np.deg2rad(-keypoint.angle))
+
         row_list,col_list,m_list,orientation_list = [], [], [], []
 
         oringe = 1.5 * scale * keypoint.size
@@ -230,7 +240,6 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
                         orientation_list.append((theta + keypoint.angle) * 8 / 360.)
 
         descriptor_128 = Trilinear_interpolation(row_list, col_list, orientation_list, m_list)
-
         threshold = norm(descriptor_128) * 0.2
         descriptor_128[descriptor_128 > threshold] = threshold
         descriptor_128 = cv2.normalize(descriptor_128, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
@@ -240,6 +249,7 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
             elif descriptor_128[index] > 255:
                 descriptor_128[index] = 255
         descriptors.append(descriptor_128)
+        
     return array(descriptors, dtype='float32')
 
 def SIFT(path):
@@ -251,12 +261,12 @@ def SIFT(path):
     descriptors = Generate_Descriptors(keypoints, gaussian)
     return keypoints,descriptors
 
-def matcher(kp1, des1, img1, kp2, des2, img2, threshold):
-    # BFMatcher with default params
+def matcher(kp1, des1, img1, kp2, des2, img2, threshold = 0.5):
+    #BFMatcher with default params
     bf = cv2.BFMatcher()
     matches = bf.knnMatch(des1,des2, k=2)
 
-    # Apply ratio test
+        # Apply ratio test
     good = []
     for m,n in matches:
         if m.distance < threshold*n.distance:
@@ -266,23 +276,37 @@ def matcher(kp1, des1, img1, kp2, des2, img2, threshold):
     for pair in good:
         matches.append(list(kp1[pair[0].queryIdx].pt + kp2[pair[0].trainIdx].pt))
 
+    # matches = []
+    # if(len(kp1)<len(kp2)):
+    #     for i in range(len(kp1)):
+    #         first_min = sys.maxsize
+    #         second_min = first_min
+    #         for j in range(len(kp2)):
+    #             sum = np.sqrt(np.sum((des1[i] - des2[j]) ** 2))
+    #             if(sum < first_min):
+    #                 second_min = first_min
+    #                 first_min = sum
+    #                 matchpoint = kp2[j]
+    #         if first_min / second_min < threshold and first_min:
+    #             print(first_min)
+    #             matches.append(list(kp1[i].pt + matchpoint.pt))
+    # else:
+    #     for i in range(len(kp2)):
+    #         first_min = sys.maxsize
+    #         second_min = first_min
+    #         for j in range(len(kp1)):
+    #             sum = np.sqrt(np.sum((des1[j] - des2[i]) ** 2))
+    #             if(sum < first_min):
+    #                 second_min = first_min
+    #                 first_min = sum
+    #                 matchpoint = kp1[j]
+    #         if first_min / second_min < threshold and first_min:
+    #             print(first_min)
+    #             matches.append(list(matchpoint.pt + kp2[i].pt))
+
     matches = np.array(matches)
-    return matches
 
-def plot_matches(matches, total_img):
-    match_img = total_img.copy()
-    offset = total_img.shape[1]/2
-    fig, ax = plt.subplots()
-    ax.set_aspect('equal')
-    ax.imshow(np.array(match_img).astype('uint8')) #　RGB is integer type
-    
-    ax.plot(matches[:, 0], matches[:, 1], 'xr')
-    ax.plot(matches[:, 2] + offset, matches[:, 3], 'xr')
-     
-    ax.plot([matches[:, 0], matches[:, 2] + offset], [matches[:, 1], matches[:, 3]],
-            'r', linewidth=0.5)
-
-    plt.show()
+    return matches*2
 
 def homography(pairs):
     rows = []
@@ -401,20 +425,35 @@ def stitch_img(left, right, H):
     stitch_image = warped_l[:warped_r.shape[0], :warped_r.shape[1], :]
     return stitch_image
 
+def plot_matches(matches, total_img):
+    match_img = total_img.copy()
+    offset = total_img.shape[1]/2
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal')
+    ax.imshow(np.array(match_img).astype('uint8')) #　RGB is integer type
+    
+    ax.plot(matches[:, 0], matches[:, 1], 'xr')
+    ax.plot(matches[:, 2] + offset, matches[:, 3], 'xr')
+     
+    ax.plot([matches[:, 0], matches[:, 2] + offset], [matches[:, 1], matches[:, 3]],
+            'r', linewidth=0.5)
+
+    plt.show()
+
 start = time.time()
 
-left_rgb = cv2.imread("prtn1000.jpg")
+left_rgb = cv2.imread("NTUST1.png")
 left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("prtn1100.jpg")
+right_rgb = cv2.imread("NTUST2.png")
 right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-kp_left, des_left = SIFT("prtn1000.jpg")
-kp_right, des_right = SIFT("prtn1100.jpg")
+kp_left, des_left = SIFT("NTUST1.png")
+kp_right, des_right = SIFT("NTUST2.png")
 
-matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb, 0.5)
+matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
 
-# total_img = np.concatenate((left_rgb, right_rgb), axis=1)
-# plot_matches(matches, total_img) # Good mathces
+total_img = np.concatenate((left_rgb, right_rgb), axis=1)
+plot_matches(matches, total_img) # Good mathces
 inliers, H = ransac(matches, 0.5, 2000)
 
 plt.imshow(stitch_img(left_rgb, right_rgb, H))
