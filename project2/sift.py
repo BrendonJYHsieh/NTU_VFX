@@ -72,17 +72,18 @@ def DoG(image):
 
     return array(gaussian_images, dtype=object), dog_images
 
-def Find_Keypoints(gaussian_images, dogs):
+def Find_Keypoints(gaussian_images, dogs, image_border = 5):
     keypoints = []
+
     for octave_index, dog in enumerate(dogs):
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
             height , width = image0.shape
-            for i in range(1, height - 2):
-                for j in range(1, width - 2):
+            for i in range(image_border, height - 1 - image_border):
+                for j in range(image_border, width - 1 - image_border):
                     center_pixel = image1[i,j]
                     extremum_exist = False
-                    if (abs(center_pixel)<1):
+                    if (abs(center_pixel)>1):
                         if(center_pixel>0):
                             if(all(center_pixel >= image0[i-1:i+2, j-1:j+2]) and all(center_pixel >= image1[i-1:i+2, j-1:j+2]) and all(center_pixel >= image2[i-1:i+2, j-1:j+2])):
                                 extremum_exist = True
@@ -127,7 +128,7 @@ def Find_Keypoints(gaussian_images, dogs):
                             _image_index += round(approximation[2])
 
                             # extremum_existing point is inside or not convergence
-                            if iteration == 4 or ii < 1 or jj < 1 or ii > height - 1  or jj > width - 1 or _image_index < 1 or _image_index > 3: 
+                            if iteration == 4 or ii < image_border or jj < image_border or ii > height - 1 - image_border  or jj > width - 1 -image_border  or _image_index < 1 or _image_index > 3: 
                                 extremum_exist = False
                                 break
 
@@ -142,7 +143,7 @@ def Find_Keypoints(gaussian_images, dogs):
                                     keypoint = cv2.KeyPoint(
                                     (jj) , # X
                                     (ii) # Y
-                                    , 1.6 * (2 ** ((_image_index + approximation[2] -1) / 3.)) #size
+                                    , 1.6 * (2 ** ((_image_index + approximation[2] - 1) / 3.)) * (2 ** (octave_index + 1))  #size
                                     , -1 # angle
                                     , abs(response) # response
                                     , octave_index + _image_index * (2 ** 8)) # octave
@@ -157,7 +158,7 @@ def Find_Keypoints(gaussian_images, dogs):
                                         for b in range(-radius, radius + 1):
                                             y = round(keypoint.pt[1]) + a
                                             x = round(keypoint.pt[0]) + b
-                                            if y > 0 and y < height - 1 and x > 0 and x < width - 1:
+                                            if y > image_border and y < height - 1 - image_border and x > image_border and x < width - image_border - 1:
                                                 Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
                                                 Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
                                                 m = sqrt(Lx * Lx + Ly * Ly)
@@ -166,73 +167,54 @@ def Find_Keypoints(gaussian_images, dogs):
                                     
                                     for smooth_index in range(36):
                                         histogram[smooth_index] = histogram[smooth_index-1] * 0.25 + histogram[smooth_index] * 0.5 + histogram[(smooth_index+1)%36] * 0.25
+
                                     orientation_max = max(histogram)
                                     for histogram_index in range(len(histogram)):
                                         if histogram[histogram_index] >= 0.8 * orientation_max and histogram[histogram_index]>histogram[histogram_index-1] and histogram[histogram_index]>histogram[(histogram_index+1)%36]: # Make description more reliable
                                             orientation = 360. - (histogram_index + 0.5 * (histogram[(histogram_index - 1) % 36] - histogram[(histogram_index + 1) % 36]) 
                                                         / (histogram[(histogram_index - 1) % 36] - 2 * histogram[histogram_index] + histogram[(histogram_index + 1) % 36])) % 36 * 10.
-                                            new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
+                                            new_keypoint = cv2.KeyPoint(
+                                              (keypoint.pt[0] + approximation[0]) * 2  ** ((keypoint.octave & 255))
+                                            , (keypoint.pt[1] + approximation[1]) * 2  ** ((keypoint.octave & 255))
+                                            , keypoint.size / 2
+                                            , orientation
+                                            , keypoint.response
+                                            , keypoint.octave)
                                             keypoints.append(new_keypoint)
-        
-    print(len(keypoints))  
     return keypoints
 
-def convertKeypointsToInputImageSize(keypoints):
-    """Convert keypoint point, size, and octave to input image size
-    """
-    converted_keypoints = []
-    for keypoint in keypoints:
-        keypoint.size *= 1
-        keypoint.octave = (keypoint.octave & 255)
-        keypoint.pt = tuple(0.5 * array(keypoint.pt) * 2  ** keypoint.octave)
-        converted_keypoints.append(keypoint)   
-    return converted_keypoints
-
-
-def Trilinear_interpolation(row_list, col_list, orientation_list, m_list):
-    histogram = zeros((6, 6, 8))   
-    for i, j, k, m  in zip(row_list, col_list, orientation_list, m_list):
-            ii, jj, kk = np.floor([i, j, k]).astype(int)
-
-            if kk < 0:
-                kk += 8
-            if kk >= 8:
-                kk -= 8
-
-            c0 = m * (1 - (i - ii))
-            c1 = m * (i - ii)
-            c00 = c0 * (1 - (j - jj))
-            c01 = c0 * (j - jj)
-            c10 = c1 * (1 - (j - jj))
-            c11 = c1 * (j - jj)
-            c000 = c00 * (1 - (k - kk))
-            c001 = c00 * (k - kk)
-            c010 = c01 * (1 - (k - kk))
-            c011 = c01 * (k - kk)
-            c100 = c10 * (1 - (k - kk))
-            c101 = c10 * (k - kk)
-            c110 = c11 * (1 - (k - kk))
-            c111 = c11 * (k - kk)
+def Trilinear_interpolation(r,c,o,m,d,obins=8):
+    histogram = zeros(128)   
+    for r, c, o, m  in zip(r, c, o, m):
             
-            histogram[ii + 1, jj + 1, kk] += c000
-            histogram[ii + 1, jj + 1, (kk + 1) % 8] += c001
-            histogram[ii + 1, jj + 2, kk] += c010
-            histogram[ii + 1, jj + 2, (kk + 1) % 8] += c011
-            histogram[ii + 2, jj + 1, kk] += c100
-            histogram[ii + 2, jj + 1, (kk + 1) % 8] += c101
-            histogram[ii + 2, jj + 2, kk] += c110
-            histogram[ii + 2, jj + 2, (kk + 1) % 8] += c111
+            r0 = floor(r)
+            c0 = floor(c)
+            o0 = floor(o)
+            d_r = r - r0
+            d_c = c - c0
+            d_o = o - o0
 
-    return histogram[1:-1, 1:-1, :].flatten()
+            for i in range(0,2):
+                r_index = r0 + i
+                if (r_index >= 0 and r_index < d):
+                    for j in range(0,2):
+                        c_index = c0 + j
+                        if (c_index >=0 and c_index < d):
+                            for k in range(0,2):
+                                o_index = ( (o0+k) % obins)
+                                value = m * ( 0.5 + (d_r - 0.5)*(2*i-1) )* ( 0.5 + (d_c - 0.5)*(2*j-1) ) * ( 0.5 + (d_o - 0.5)*(2*k-1) )
+                                histogram[r_index*d*obins + c_index*obins + o_index] += value
 
-def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
+    return histogram.flatten()
+
+def Generate_Descriptors(keypoints, gaussian_images, descr_hist_d=4):
 
     descriptors = []
 
     for keypoint in keypoints:
         octave = keypoint.octave & 255
         layer = (keypoint.octave >> 8) & 255
-        scale = 1 / np.float32(1 << octave) if octave >= 0 else np.float32(1 << -octave)
+        scale = 1 / np.float32(1 << octave)
 
         gaussian_image = gaussian_images[octave, layer]
 
@@ -244,28 +226,28 @@ def Generate_Descriptors(keypoints, gaussian_images, window_size=4):
 
         row_list,col_list,m_list,orientation_list = [], [], [], []
 
-        oringe = 1.5 * scale * keypoint.size
-        half = int(min(round(oringe * sqrt(2) * (window_size + 1) * 0.5) , sqrt(height ** 2 + width ** 2)))    
+        hist_width = 1.5 * scale * keypoint.size
+        radius = round(hist_width * (descr_hist_d + 1) * sqrt(2) / 2)
 
-        for i in range(-half, half + 1):
-            for j in range(-half, half + 1):
-                row_orientation = j * sin_angle + i * cos_angle
-                col_orientation = j * cos_angle - i * sin_angle
-                row = (row_orientation / oringe) + 0.5 * window_size - 0.5
-                col = (col_orientation / oringe) + 0.5 * window_size - 0.5
-                if row > -1 and row < window_size and col > -1 and col < window_size:
+        for i in range(-radius, radius + 1):
+            for j in range(-radius, radius + 1):
+                i_rot = j * sin_angle + i * cos_angle
+                j_rot = j * cos_angle - i * sin_angle
+                r_bin = (i_rot / hist_width) + 0.5 * descr_hist_d - 0.5
+                c_bin = (j_rot / hist_width) + 0.5 * descr_hist_d - 0.5
+                if r_bin > -1 and r_bin < descr_hist_d and c_bin > -1 and c_bin < descr_hist_d:
                     window_row, window_col = round(point[1] + i), round(point[0] + j)
                     if window_row > 0 and window_row < height - 1 and window_col > 0 and window_col < width - 1:
                         Lx = gaussian_image[window_row, window_col + 1] - gaussian_image[window_row, window_col - 1]
                         Ly = gaussian_image[window_row - 1, window_col] - gaussian_image[window_row + 1, window_col]
                         m = sqrt(Lx * Lx + Ly * Ly)
                         theta = np.rad2deg(np.arctan2(Ly, Lx)) % 360
-                        row_list.append(row)
-                        col_list.append(col)
-                        m_list.append(np.exp(-0.5 / ((0.5 * window_size) ** 2) * ((row_orientation / oringe) ** 2 + (col_orientation / oringe) ** 2)) * m)
-                        orientation_list.append((theta + keypoint.angle) * 8 / 360.)
+                        row_list.append(r_bin)
+                        col_list.append(c_bin)
+                        m_list.append(np.exp( -(j_rot*j_rot+i_rot*i_rot) / (2*(0.5*descr_hist_d*hist_width) ** 2) ) * m)
+                        orientation_list.append((theta - keypoint.angle) * 8 / 360.)
 
-        descriptor_128 = Trilinear_interpolation(row_list, col_list, orientation_list, m_list)
+        descriptor_128 = Trilinear_interpolation(row_list, col_list, orientation_list, m_list,descr_hist_d)
         threshold = norm(descriptor_128) * 0.2
         descriptor_128[descriptor_128 > threshold] = threshold
         descriptor_128 = cv2.normalize(descriptor_128, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
@@ -284,11 +266,8 @@ def SIFT(path):
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(image)
     keypoints = Find_Keypoints(gaussian,dog)
-    keypoints = convertKeypointsToInputImageSize(keypoints)
-    #descriptors = Generate_Descriptors(keypoints, gaussian)
-    #return keypoints,descriptors
-
-    return keypoints
+    descriptors = Generate_Descriptors(keypoints, gaussian)
+    return keypoints,descriptors
 
 def matcher(kp1, des1, img1, kp2, des2, img2, threshold = 0.5):
     #BFMatcher with default params
@@ -335,7 +314,7 @@ def matcher(kp1, des1, img1, kp2, des2, img2, threshold = 0.5):
 
     matches = np.array(matches)
 
-    return matches*2
+    return matches/2
 
 def homography(pairs):
     rows = []
@@ -471,33 +450,37 @@ def plot_matches(matches, total_img):
 
 start = time.time()
 
-# left_rgb = cv2.imread("instance.png")
-# left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-# right_rgb = cv2.imread("NTUST2.png")
-# right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
+left_rgb = cv2.imread("prtn10.jpg")
+left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
+right_rgb = cv2.imread("prtn11.jpg")
+right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-# kp_left, des_left = SIFT("instance.png")
-# kp_right, des_right = SIFT("NTUST2.png")
-
-
-
-# matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
-
-# total_img = np.concatenate((left_rgb, right_rgb), axis=1)
-# plot_matches(matches, total_img) # Good mathces
-# inliers, H = ransac(matches, 0.5, 2000)
-
-# plt.imshow(stitch_img(left_rgb, right_rgb, H))
+kp_left, des_left = SIFT("prtn10.jpg")
+kp_right, des_right = SIFT("prtn11.jpg")
 
 
-image0 = cv2.imread("box.png")
-image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
-keypoints = SIFT("box.png")
-for i in keypoints:
-    cv2.circle(image0, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
 
-plt.imshow(image0)
+matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
+
+total_img = np.concatenate((left_rgb, right_rgb), axis=1)
+
+print(total_img.shape)
+
+plot_matches(matches, total_img) # Good mathces
+inliers, H = ransac(matches, 0.5, 2000)
+
+plt.imshow(stitch_img(left_rgb, right_rgb, H))
 plt.show()
+
+# image0 = cv2.imread("prtn10.jpg")
+# image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
+# keypoints,descriptors = SIFT("prtn10.jpg")
+# print(len(keypoints))
+# for i in keypoints:
+#     cv2.circle(image0, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+
+# plt.imshow(image0)
+# plt.show()
 
 
 end = time.time()
