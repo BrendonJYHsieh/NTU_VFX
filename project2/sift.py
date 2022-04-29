@@ -5,7 +5,6 @@ import sys
 import numpy as np
 import time
 import random
-from tqdm.notebook import tqdm
 from cv2 import GaussianBlur,sqrt,resize
 from matplotlib import pyplot as plt
 from numpy import array, zeros,sqrt,log,subtract,all
@@ -416,7 +415,7 @@ def stitch_img(left, right, H):
     black = np.zeros(3)  # Black pixel.
     
     # Stitching procedure, store results in warped_l.
-    for i in tqdm(range(warped_r.shape[0])):
+    for i in range(warped_r.shape[0]):
         for j in range(warped_r.shape[1]):
             pixel_l = warped_l[i, j, :]
             pixel_r = warped_r[i, j, :]
@@ -450,13 +449,13 @@ def plot_matches(matches, total_img):
 
 start = time.time()
 
-left_rgb = cv2.imread("prtn10.jpg")
+left_rgb = cv2.imread("prtn100.jpg")
 left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("prtn11.jpg")
+right_rgb = cv2.imread("prtn110.jpg")
 right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-kp_left, des_left = SIFT("prtn10.jpg")
-kp_right, des_right = SIFT("prtn11.jpg")
+kp_left, des_left = SIFT("prtn100.jpg")
+kp_right, des_right = SIFT("prtn110.jpg")
 
 
 
