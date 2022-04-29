@@ -1,3 +1,4 @@
+from math import floor
 from operator import le
 import cv2
 import sys
@@ -36,8 +37,9 @@ def DoG(image):
     # Generate Gaussian sigmas
 
     sigma, s = 1.6, 3
-    layers_of_images_in_octave = s + 3
     k = 2 ** (1. / s)
+    
+    layers_of_images_in_octave = s + 3
     gaussian_sigmas  = zeros(layers_of_images_in_octave-1)
 
     for i in range(1,layers_of_images_in_octave):
@@ -47,7 +49,7 @@ def DoG(image):
 
     # Generate Gaussian Images
 
-    num_of_octave = int((log(min(image.shape)) / log(2)) - 2)
+    num_of_octave = floor((log(min(image.shape)) / log(2)) - 2)
     gaussian_images = []
     for i in range(num_of_octave):
         gaussian_images_in_octave = []
@@ -138,9 +140,9 @@ def Find_Keypoints(gaussian_images, dogs):
                                 if ((h[0,0] + h[1,1]) ** 2) / (h[0,0] * h[1,1] - h[0,1] * h[0,1]) < 12.1:
                                     # Keypoint 
                                     keypoint = cv2.KeyPoint(
-                                    (jj+approximation[0]) * (2 ** octave_index), # X
-                                    (ii+approximation[1]) * (2 ** octave_index) # Y
-                                    , 1.6 * (2 ** ((_image_index + approximation[2]) / 3.)) #size
+                                    (jj) , # X
+                                    (ii) # Y
+                                    , 1.6 * (2 ** ((_image_index + approximation[2] -1) / 3.)) #size
                                     , -1 # angle
                                     , abs(response) # response
                                     , octave_index + _image_index * (2 ** 8)) # octave
@@ -153,16 +155,15 @@ def Find_Keypoints(gaussian_images, dogs):
                                     smooth_histogram = zeros(36)
                                     for a in range(-radius, radius + 1):
                                         for b in range(-radius, radius + 1):
-                                            y = round(keypoint.pt[1] /  np.float32(2 ** octave_index)) + a
-                                            x = round(keypoint.pt[0] /  np.float32(2 ** octave_index)) + b
+                                            y = round(keypoint.pt[1]) + a
+                                            x = round(keypoint.pt[0]) + b
                                             if y > 0 and y < height - 1 and x > 0 and x < width - 1:
                                                 Lx = gaussian_image[y, x + 1] - gaussian_image[y, x - 1]
                                                 Ly = gaussian_image[y - 1, x] - gaussian_image[y + 1, x]
                                                 m = sqrt(Lx * Lx + Ly * Ly)
-                                                theta =  np.rad2deg( np.arctan2(Ly, Lx))
-                                                histogram_index = int(round(theta / 10.))
-                                                histogram[histogram_index % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m
-
+                                                theta =  np.rad2deg(np.arctan2(Ly, Lx))
+                                                histogram[round(theta / 10.) % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m            
+                                    
                                     orientation_max = max(histogram)
                                     for peak_index in range(len(histogram)):
                                         if histogram[peak_index] >= 0.8 * orientation_max: # Make description more reliable
@@ -170,8 +171,7 @@ def Find_Keypoints(gaussian_images, dogs):
                                                         / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
                                             new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
                                             keypoints.append(new_keypoint)
-
-                                            
+        
                                     # for n in range(36):
                                     #     smooth_histogram[n] = (6 * histogram[n] + 4 * (histogram[n - 1] + histogram[(n + 1) % 36]) + histogram[n - 2] + histogram[(n + 2) % 36]) / 16.
                                     # orientation_max = max(smooth_histogram)
@@ -188,8 +188,21 @@ def Find_Keypoints(gaussian_images, dogs):
                                     #         if abs(orientation - 360.) < float_tolerance:
                                     #             orientation = 0
                                     #         new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-                                    #         keypoints.append(new_keypoint)     
+                                    #         keypoints.append(new_keypoint)
+    print(len(keypoints))  
     return keypoints
+
+def convertKeypointsToInputImageSize(keypoints):
+    """Convert keypoint point, size, and octave to input image size
+    """
+    converted_keypoints = []
+    for keypoint in keypoints:
+        keypoint.size *= 1
+        keypoint.octave = (keypoint.octave & 255)
+        keypoint.pt = tuple(0.5 * array(keypoint.pt) * 2  ** keypoint.octave)
+        converted_keypoints.append(keypoint)   
+    return converted_keypoints
+
 
 def Trilinear_interpolation(row_list, col_list, orientation_list, m_list):
     histogram = zeros((6, 6, 8))   
@@ -286,6 +299,7 @@ def SIFT(path):
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(image)
     keypoints = Find_Keypoints(gaussian,dog)
+    keypoints = convertKeypointsToInputImageSize(keypoints)
     #descriptors = Generate_Descriptors(keypoints, gaussian)
     #return keypoints,descriptors
 
