@@ -82,7 +82,7 @@ def Find_Keypoints(gaussian_images, dogs):
                 for j in range(1, width - 2):
                     center_pixel = image1[i,j]
                     extremum_exist = False
-                    if (abs(center_pixel)>1):
+                    if (abs(center_pixel)<1):
                         if(center_pixel>0):
                             if(all(center_pixel >= image0[i-1:i+2, j-1:j+2]) and all(center_pixel >= image1[i-1:i+2, j-1:j+2]) and all(center_pixel >= image2[i-1:i+2, j-1:j+2])):
                                 extremum_exist = True
@@ -152,7 +152,7 @@ def Find_Keypoints(gaussian_images, dogs):
                                     scale = 1.5 * keypoint.size  
                                     radius = round(3 * scale)
                                     histogram = zeros(36)
-                                    smooth_histogram = zeros(36)
+
                                     for a in range(-radius, radius + 1):
                                         for b in range(-radius, radius + 1):
                                             y = round(keypoint.pt[1]) + a
@@ -164,31 +164,16 @@ def Find_Keypoints(gaussian_images, dogs):
                                                 theta =  np.rad2deg(np.arctan2(Ly, Lx))
                                                 histogram[round(theta / 10.) % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m            
                                     
+                                    for smooth_index in range(36):
+                                        histogram[smooth_index] = histogram[smooth_index-1] * 0.25 + histogram[smooth_index] * 0.5 + histogram[(smooth_index+1)%36] * 0.25
                                     orientation_max = max(histogram)
-                                    for peak_index in range(len(histogram)):
-                                        if histogram[peak_index] >= 0.8 * orientation_max: # Make description more reliable
-                                            orientation = 360. - (peak_index + 0.5 * (histogram[(peak_index - 1) % 36] - histogram[(peak_index + 1) % 36]) 
-                                                        / (histogram[(peak_index - 1) % 36] - 2 * histogram[peak_index] + histogram[(peak_index + 1) % 36])) % 36 * 10.
+                                    for histogram_index in range(len(histogram)):
+                                        if histogram[histogram_index] >= 0.8 * orientation_max and histogram[histogram_index]>histogram[histogram_index-1] and histogram[histogram_index]>histogram[(histogram_index+1)%36]: # Make description more reliable
+                                            orientation = 360. - (histogram_index + 0.5 * (histogram[(histogram_index - 1) % 36] - histogram[(histogram_index + 1) % 36]) 
+                                                        / (histogram[(histogram_index - 1) % 36] - 2 * histogram[histogram_index] + histogram[(histogram_index + 1) % 36])) % 36 * 10.
                                             new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
                                             keypoints.append(new_keypoint)
         
-                                    # for n in range(36):
-                                    #     smooth_histogram[n] = (6 * histogram[n] + 4 * (histogram[n - 1] + histogram[(n + 1) % 36]) + histogram[n - 2] + histogram[(n + 2) % 36]) / 16.
-                                    # orientation_max = max(smooth_histogram)
-                                    # orientation_peaks = np.where(np.logical_and(smooth_histogram > np.roll(smooth_histogram, 1), smooth_histogram > np.roll(smooth_histogram, -1)))[0]
-                                    # for peak_index in orientation_peaks:
-                                    #     peak_value = smooth_histogram[peak_index]
-                                    #     if peak_value >= 0.8 * orientation_max:
-                                    #         # Quadratic peak interpolation
-                                    #         # The interpolation update is given by equation (6.30) in https://ccrma.stanford.edu/~jos/sasp/Quadratic_Interpolation_Spectral_Peaks.html
-                                    #         left_value = smooth_histogram[(peak_index - 1) % 36]
-                                    #         right_value = smooth_histogram[(peak_index + 1) % 36]
-                                    #         interpolated_peak_index = (peak_index + 0.5 * (left_value - right_value) / (left_value - 2 * peak_value + right_value)) % 36
-                                    #         orientation = 360. - interpolated_peak_index * 360. / 36
-                                    #         if abs(orientation - 360.) < float_tolerance:
-                                    #             orientation = 0
-                                    #         new_keypoint = cv2.KeyPoint(*keypoint.pt, keypoint.size, orientation, keypoint.response, keypoint.octave)
-                                    #         keypoints.append(new_keypoint)
     print(len(keypoints))  
     return keypoints
 
