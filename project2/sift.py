@@ -4,6 +4,7 @@ import cv2
 import sys
 import numpy as np
 import time
+import math
 import random
 from cv2 import GaussianBlur,sqrt,resize
 from matplotlib import pyplot as plt
@@ -257,30 +258,47 @@ def Generate_Descriptors(keypoints, gaussian_images, descr_hist_d=4):
         
     return array(descriptors, dtype='float32')
 
+def cylindricalWarpImage(image, focal_length):
+    height, width = image.shape[0:2]
+
+    K = np.array([[focal_length, 0, width/2], [0, focal_length, height/2], [0, 0, 1]])
+
+    cyl = np.zeros_like(image)
+
+    for i in np.arange(0,height):
+        for j in np.arange(0,width):
+            theta = (j - float(width) / 2.0) / focal_length
+            h     = (i - float(height) / 2.0) / focal_length
+
+            X = np.array([math.sin(theta), h, math.cos(theta)])
+            X = np.dot(K,X)
+            jj = X[0] / X[2]
+            if jj < 0 or jj >= width:
+                continue
+
+            ii = X[1] / X[2]
+            if ii < 0 or ii >= height:
+                continue
+
+            cyl[int(i),int(j)] = image[int(ii),int(jj)]
+
+    return (cyl)
+
 def SIFT(path):
     image = cv2.imread(path,cv2.IMREAD_GRAYSCALE).astype('float32')
-    image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+    image = cylindricalWarpImage(image,705)
+    #image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
+    image_rgb = cv2.imread(path)
+    image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
+    image_rgb = cylindricalWarpImage(image_rgb,705)
     gaussian, dog = DoG(image)
     keypoints = Find_Keypoints(gaussian,dog)
     descriptors = Generate_Descriptors(keypoints, gaussian)
-    return keypoints,descriptors
+    return keypoints,descriptors,image_rgb
 
 def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
-    #BFMatcher with default params
-    
-    # bf = cv2.BFMatcher()
-    # matches = bf.knnMatch(des1,des2, k=2)
-
-    # # Apply ratio test
-    # good = []
-    # for m,n in matches:
-    #     if m.distance < threshold*n.distance:
-    #         good.append([m])
-    # matches = []
-    # for pair in good:
-    #     matches.append(list(kp1[pair[0].queryIdx].pt + kp2[pair[0].trainIdx].pt))
-    
+    # CrossCheck
     matches = []
     for i in range(len(kp1)):
         first_min = sys.maxsize
@@ -313,7 +331,7 @@ def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
                 np.delete(des2, jj)
                 matches.append(list(kp1[i].pt + kp2[jj].pt))
 
-    return np.array(matches)/2
+    return np.array(matches)
 
 def homography(pairs):
     rows = []
@@ -452,37 +470,40 @@ def get_good_match(des1,des2):
     maches = bf.knnMatch(des1, des2, k=2)
     good_kp = []
     for (i,j) in maches:
-        if i.distance < 0.75*j.distance:
+        if i.distance < 0.5*j.distance:
             good_kp.append(i)
     return good_kp
 
 def siftImage(img_1,img_2):
     
-    kp_1, des_1 = SIFT(img_1)
-    kp_2, des_2 = SIFT(img_2)
-    good_kp = get_good_match(des_1, des_2)
+    kp_1, des_1,img_rgb1 = SIFT(img_1)
+    kp_2, des_2,img_rgb2 = SIFT(img_2)
+    good_kp = matcher(kp_1, des_1, kp_2, des_2)
     
     if len(good_kp) > 4:
-        ptsA= np.float32([kp_1[m.queryIdx].pt for m in good_kp]).reshape(-1, 1, 2)
-        ptsB = np.float32([kp_2[m.trainIdx].pt for m in good_kp]).reshape(-1, 1, 2)
+
+        ptsA = np.float32([m[0:2]  for m in good_kp])
+        ptsB = np.float32([m[2:4]  for m in good_kp])
         ransacReprojThreshold = 4  
         H, status =cv2.findHomography(ptsA,ptsB,cv2.RANSAC,ransacReprojThreshold)
-        imgOutput = cv2.warpPerspective(img_1, H, (img_1.shape[1]+img_2.shape[1], img_1.shape[0]))
-        imgOutput[0:img_2.shape[0], 0:img_2.shape[1]] = img_2
-        
+        imgOutput = cv2.warpPerspective(img_rgb1, H, (img_rgb1.shape[1]+img_rgb2.shape[1], img_rgb1.shape[0]))
+        imgOutput[0:img_rgb2.shape[0], 0:img_rgb2.shape[1]] = img_rgb2
     return imgOutput
 
+def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
+    for i in kp_left:
+        cv2.circle(left_rgb, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+    for j in kp_right:
+        cv2.circle(right_rgb, (int(j.pt[0]),int(j.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+    total_img = np.concatenate((left_rgb, right_rgb), axis=1)
+    plt.imshow(total_img)
+    plt.show()
 start = time.time()
 
-left_rgb = cv2.imread("3701188.jpg")
-left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("3701177.jpg")
-right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
+kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
+kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
 
-kp_left, des_left = SIFT("3701188.jpg")
-kp_right, des_right = SIFT("3701177.jpg")
-
-
+plot_keypoint(kp_left,left_rgb,kp_right,right_rgb)
 
 matches = matcher(kp_left, des_left, kp_right, des_right)
 
