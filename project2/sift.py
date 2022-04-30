@@ -10,8 +10,6 @@ from matplotlib import pyplot as plt
 from numpy import array, zeros,sqrt,log,subtract,all
 from numpy.linalg import lstsq, norm
 
-float_tolerance = 1e-7
-
 def Dog_visualization(layers):
     total_height = 0
     max_width = 0
@@ -268,52 +266,54 @@ def SIFT(path):
     descriptors = Generate_Descriptors(keypoints, gaussian)
     return keypoints,descriptors
 
-def matcher(kp1, des1, img1, kp2, des2, img2, threshold = 0.5):
+def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
     #BFMatcher with default params
-    bf = cv2.BFMatcher()
-    matches = bf.knnMatch(des1,des2, k=2)
+    
+    # bf = cv2.BFMatcher()
+    # matches = bf.knnMatch(des1,des2, k=2)
 
-        # Apply ratio test
-    good = []
-    for m,n in matches:
-        if m.distance < threshold*n.distance:
-            good.append([m])
-
-    matches = []
-    for pair in good:
-        matches.append(list(kp1[pair[0].queryIdx].pt + kp2[pair[0].trainIdx].pt))
-
+    # # Apply ratio test
+    # good = []
+    # for m,n in matches:
+    #     if m.distance < threshold*n.distance:
+    #         good.append([m])
     # matches = []
-    # if(len(kp1)<len(kp2)):
-    #     for i in range(len(kp1)):
-    #         first_min = sys.maxsize
-    #         second_min = first_min
-    #         for j in range(len(kp2)):
-    #             sum = np.sqrt(np.sum((des1[i] - des2[j]) ** 2))
-    #             if(sum < first_min):
-    #                 second_min = first_min
-    #                 first_min = sum
-    #                 matchpoint = kp2[j]
-    #         if first_min / second_min < threshold and first_min:
-    #             print(first_min)
-    #             matches.append(list(kp1[i].pt + matchpoint.pt))
-    # else:
-    #     for i in range(len(kp2)):
-    #         first_min = sys.maxsize
-    #         second_min = first_min
-    #         for j in range(len(kp1)):
-    #             sum = np.sqrt(np.sum((des1[j] - des2[i]) ** 2))
-    #             if(sum < first_min):
-    #                 second_min = first_min
-    #                 first_min = sum
-    #                 matchpoint = kp1[j]
-    #         if first_min / second_min < threshold and first_min:
-    #             print(first_min)
-    #             matches.append(list(matchpoint.pt + kp2[i].pt))
+    # for pair in good:
+    #     matches.append(list(kp1[pair[0].queryIdx].pt + kp2[pair[0].trainIdx].pt))
+    
+    matches = []
+    for i in range(len(kp1)):
+        first_min = sys.maxsize
+        second_min = first_min
+        jj = 0
+        for j in range(len(kp2)):
+            sum = norm(des1[i] - des2[j])
+            if(sum < first_min):
+                second_min = first_min
+                first_min = sum
+                jj = j
+                
+        if first_min / second_min < threshold:
+            if(crossCheck):
+                ii = 0
+                first_minn = sys.maxsize
+                second_minn = first_minn
+                for index in range(len(kp1)):
+                    sumn = norm(des1[index] - des2[jj])
+                    if(sumn < first_minn):
+                        second_minn = first_minn
+                        first_minn = sumn
+                        ii = index
+                
+                if first_minn / second_minn < threshold:
+                    if(ii == i):
+                        matches.append(list(kp1[i].pt + kp2[jj].pt))
+                        np.delete(des2, jj)
+            else:
+                np.delete(des2, jj)
+                matches.append(list(kp1[i].pt + kp2[jj].pt))
 
-    matches = np.array(matches)
-
-    return matches/2
+    return np.array(matches)/2
 
 def homography(pairs):
     rows = []
@@ -447,23 +447,46 @@ def plot_matches(matches, total_img):
 
     plt.show()
 
+def get_good_match(des1,des2):
+    bf = cv2.BFMatcher()
+    maches = bf.knnMatch(des1, des2, k=2)
+    good_kp = []
+    for (i,j) in maches:
+        if i.distance < 0.75*j.distance:
+            good_kp.append(i)
+    return good_kp
+
+def siftImage(img_1,img_2):
+    
+    kp_1, des_1 = SIFT(img_1)
+    kp_2, des_2 = SIFT(img_2)
+    good_kp = get_good_match(des_1, des_2)
+    
+    if len(good_kp) > 4:
+        ptsA= np.float32([kp_1[m.queryIdx].pt for m in good_kp]).reshape(-1, 1, 2)
+        ptsB = np.float32([kp_2[m.trainIdx].pt for m in good_kp]).reshape(-1, 1, 2)
+        ransacReprojThreshold = 4  
+        H, status =cv2.findHomography(ptsA,ptsB,cv2.RANSAC,ransacReprojThreshold)
+        imgOutput = cv2.warpPerspective(img_1, H, (img_1.shape[1]+img_2.shape[1], img_1.shape[0]))
+        imgOutput[0:img_2.shape[0], 0:img_2.shape[1]] = img_2
+        
+    return imgOutput
+
 start = time.time()
 
-left_rgb = cv2.imread("prtn100.jpg")
+left_rgb = cv2.imread("3701188.jpg")
 left_rgb = cv2.cvtColor(left_rgb, cv2.COLOR_BGR2RGB)
-right_rgb = cv2.imread("prtn110.jpg")
+right_rgb = cv2.imread("3701177.jpg")
 right_rgb = cv2.cvtColor(right_rgb, cv2.COLOR_BGR2RGB)
 
-kp_left, des_left = SIFT("prtn100.jpg")
-kp_right, des_right = SIFT("prtn110.jpg")
+kp_left, des_left = SIFT("3701188.jpg")
+kp_right, des_right = SIFT("3701177.jpg")
 
 
 
-matches = matcher(kp_left, des_left, left_rgb, kp_right, des_right, right_rgb)
+matches = matcher(kp_left, des_left, kp_right, des_right)
 
 total_img = np.concatenate((left_rgb, right_rgb), axis=1)
-
-print(total_img.shape)
 
 plot_matches(matches, total_img) # Good mathces
 inliers, H = ransac(matches, 0.5, 2000)
