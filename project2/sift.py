@@ -76,10 +76,9 @@ def Find_Keypoints(gaussian_images, dogs, image_border = 5):
     
     print("finding keypoints...")
     progress = tqdm(total = len(dogs))
-
     for octave_index, dog in enumerate(dogs):
-        print(octave_index,"test")
         progress.update(1)
+        progress.refresh()
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
             height , width = image0.shape
@@ -169,8 +168,9 @@ def Find_Keypoints(gaussian_images, dogs, image_border = 5):
                                                 theta =  np.rad2deg(np.arctan2(Ly, Lx))
                                                 histogram[round(theta / 10.) % 36] += np.exp(-0.5 / (scale ** 2) * (a ** 2 + b ** 2)) * m            
                                     
-                                    for smooth_index in range(36):
-                                        histogram[smooth_index] = histogram[smooth_index-1] * 0.25 + histogram[smooth_index] * 0.5 + histogram[(smooth_index+1)%36] * 0.25
+                                    
+                                    for smooth_index in range(72):
+                                        histogram[smooth_index%36] = histogram[(smooth_index-1)%36] * 0.25 + histogram[smooth_index%36] * 0.5 + histogram[(smooth_index+1)%36] * 0.25
 
                                     orientation_max = max(histogram)
                                     for histogram_index in range(len(histogram)):
