@@ -6,6 +6,7 @@ import numpy as np
 import time
 import math
 import random
+from tqdm import tqdm, trange
 from cv2 import GaussianBlur,sqrt,resize
 from matplotlib import pyplot as plt
 from numpy import array, zeros,sqrt,log,subtract,all
@@ -72,8 +73,13 @@ def DoG(image):
 
 def Find_Keypoints(gaussian_images, dogs, image_border = 5):
     keypoints = []
+    
+    print("finding keypoints...")
+    progress = tqdm(total = len(dogs))
 
     for octave_index, dog in enumerate(dogs):
+        print(octave_index,"test")
+        progress.update(1)
         for image_index in range(1,len(dog)-1):
             image0, image1,image2 = dog[image_index-1:image_index+2]
             height , width = image0.shape
@@ -206,10 +212,12 @@ def Trilinear_interpolation(r,c,o,m,d,obins=8):
     return histogram.flatten()
 
 def Generate_Descriptors(keypoints, gaussian_images, descr_hist_d=4):
-
+    print("generate descriptors...")
+    progress = tqdm(total = len(keypoints))
     descriptors = []
 
     for keypoint in keypoints:
+        progress.update(1)
         octave = keypoint.octave & 255
         layer = (keypoint.octave >> 8) & 255
         scale = 1 / np.float32(1 << octave)
@@ -299,8 +307,9 @@ def SIFT(path):
 
 def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
     # CrossCheck
+    print("matching image ...")
     matches = []
-    for i in range(len(kp1)):
+    for i in trange(len(kp1)):
         first_min = sys.maxsize
         second_min = first_min
         jj = 0
@@ -433,7 +442,7 @@ def stitch_img(left, right, H):
     black = np.zeros(3)  # Black pixel.
     
     # Stitching procedure, store results in warped_l.
-    for i in range(warped_r.shape[0]):
+    for i in trange(warped_r.shape[0]):
         for j in range(warped_r.shape[1]):
             pixel_l = warped_l[i, j, :]
             pixel_r = warped_r[i, j, :]
@@ -465,31 +474,6 @@ def plot_matches(matches, total_img):
 
     plt.show()
 
-def get_good_match(des1,des2):
-    bf = cv2.BFMatcher()
-    maches = bf.knnMatch(des1, des2, k=2)
-    good_kp = []
-    for (i,j) in maches:
-        if i.distance < 0.5*j.distance:
-            good_kp.append(i)
-    return good_kp
-
-def siftImage(img_1,img_2):
-    
-    kp_1, des_1,img_rgb1 = SIFT(img_1)
-    kp_2, des_2,img_rgb2 = SIFT(img_2)
-    good_kp = matcher(kp_1, des_1, kp_2, des_2)
-    
-    if len(good_kp) > 4:
-
-        ptsA = np.float32([m[0:2]  for m in good_kp])
-        ptsB = np.float32([m[2:4]  for m in good_kp])
-        ransacReprojThreshold = 4  
-        H, status =cv2.findHomography(ptsA,ptsB,cv2.RANSAC,ransacReprojThreshold)
-        imgOutput = cv2.warpPerspective(img_rgb1, H, (img_rgb1.shape[1]+img_rgb2.shape[1], img_rgb1.shape[0]))
-        imgOutput[0:img_rgb2.shape[0], 0:img_rgb2.shape[1]] = img_rgb2
-    return imgOutput
-
 def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     for i in kp_left:
         cv2.circle(left_rgb, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
@@ -503,30 +487,17 @@ start = time.time()
 kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
 kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
 
-plot_keypoint(kp_left,left_rgb,kp_right,right_rgb)
+plot_keypoint(kp_left,left_rgb,kp_right.copy(),right_rgb.copy())
 
 matches = matcher(kp_left, des_left, kp_right, des_right)
-
 total_img = np.concatenate((left_rgb, right_rgb), axis=1)
 
 plot_matches(matches, total_img) # Good mathces
 inliers, H = ransac(matches, 0.5, 2000)
 
-plt.imshow(stitch_img(left_rgb, right_rgb, H))
-plt.show()
-
-# image0 = cv2.imread("prtn10.jpg")
-# image0 = cv2.cvtColor(image0, cv2.COLOR_BGR2RGB)
-# keypoints,descriptors = SIFT("prtn10.jpg")
-# print(len(keypoints))
-# for i in keypoints:
-#     cv2.circle(image0, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
-
-# plt.imshow(image0)
-# plt.show()
-
-
 end = time.time()
 print(end - start)
 
-#Dog_visualization(dog)
+plt.imshow(stitch_img(left_rgb, right_rgb, H))
+plt.show()
+
