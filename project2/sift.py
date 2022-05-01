@@ -354,7 +354,7 @@ def homography(matches):
 def ransac(matches,threshold = 0.5):
     
     best_inliers = []
-    for i in range(1000):
+    for index in range(2000):
 
         H = homography(np.array([matches[i] for i in random.sample(range(len(matches)), 4) ]))
         inliers = []
@@ -373,6 +373,36 @@ def ransac(matches,threshold = 0.5):
     print("inliers/matches: {}/{} = {}%".format(len(best_inliers), len(matches),len(best_inliers)/len(matches)))
     return best_H
 
+def to_mtx(img):
+    H,V,C = img.shape
+    mtr = np.zeros((V,H,C), dtype='float')
+    for i in range(img.shape[0]):
+        mtr[:,i] = img[i]
+    
+    return mtr
+
+def to_img(mtr):
+    V,H,C = mtr.shape
+    img = np.zeros((H,V,C), dtype='float')
+    for i in range(mtr.shape[0]):
+        img[:,i] = mtr[i]
+        
+    return img
+
+def warpPerspective(img, M, dsize):
+    mtr = to_mtx(img)
+    R,C = dsize
+    dst = np.zeros((R,C,mtr.shape[2]))
+    for i in range(mtr.shape[0]):
+        for j in range(mtr.shape[1]):
+            res = np.dot(M, [i,j,1])
+            i2,j2,_ = (res / res[2] + 0.5).astype(int)
+            if i2 >= 0 and i2 < R:
+                if j2 >= 0 and j2 < C:
+                    dst[i2,j2] = mtr[i,j]
+    
+    return to_img(dst)
+
 def stitch_img(left, right, H):
     print("stiching image ...")
     
@@ -387,7 +417,7 @@ def stitch_img(left, right, H):
     height_l, width_l, channel_l = left.shape
     corners = [[0, 0, 1], [width_l, 0, 1], [width_l, height_l, 1], [0, height_l, 1]]
     corners_new = [np.dot(H, corner) for corner in corners]
-    print(corners_new)
+
     corners_new = np.array(corners_new).T 
     x_news = corners_new[0] / corners_new[2]
     y_news = corners_new[1] / corners_new[2]
@@ -403,7 +433,7 @@ def stitch_img(left, right, H):
     size = (width_new, height_new)
 
     # right image
-    warped_l = cv2.warpPerspective(src=left, M=H, dsize=size)
+    warped_l = warpPerspective(left, H, size)
 
     height_r, width_r, channel_r = right.shape
     
@@ -412,7 +442,7 @@ def stitch_img(left, right, H):
     size = (width_new, height_new)
     
 
-    warped_r = cv2.warpPerspective(src=right, M=translation_mat, dsize=size)
+    warped_r = warpPerspective(right, translation_mat, size)
      
     black = np.zeros(3)  # Black pixel.
     
