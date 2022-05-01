@@ -1,5 +1,4 @@
 from math import floor
-from operator import le
 import cv2
 import sys
 import numpy as np
@@ -342,62 +341,37 @@ def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
 
     return np.array(matches)
 
-def homography(pairs):
-    rows = []
-    for i in range(pairs.shape[0]):
-        p1 = np.append(pairs[i][0:2], 1)
-        p2 = np.append(pairs[i][2:4], 1)
-        row1 = [0, 0, 0, p1[0], p1[1], p1[2], -p2[1]*p1[0], -p2[1]*p1[1], -p2[1]*p1[2]]
-        row2 = [p1[0], p1[1], p1[2], 0, 0, 0, -p2[0]*p1[0], -p2[0]*p1[1], -p2[0]*p1[2]]
-        rows.append(row1)
-        rows.append(row2)
-    rows = np.array(rows)
-    U, s, V = np.linalg.svd(rows)
-    H = V[-1].reshape(3, 3)
+def homography(matches):
+    matrix = []
+    for match in matches:
+        matrix.append([0, 0, 0, match[0], match[1], 1., -match[3]*match[0], -match[3]*match[1], -match[3]])
+        matrix.append([match[0], match[1], 1., 0, 0, 0, -match[2]*match[0], -match[2]*match[1], -match[2]])
+    U, s, V = np.linalg.svd(np.array(matrix))
+    H = V[8].reshape(3, 3)
     H = H/H[2, 2] # standardize to let w*H[2,2] = 1
     return H
 
-def random_point(matches, k=4):
-    idx = random.sample(range(len(matches)), k)
-    point = [matches[i] for i in idx ]
-    return np.array(point)
-
-def get_error(points, H):
-    num_points = len(points)
-    all_p1 = np.concatenate((points[:, 0:2], np.ones((num_points, 1))), axis=1)
-    all_p2 = points[:, 2:4]
-    estimate_p2 = np.zeros((num_points, 2))
-    for i in range(num_points):
-        temp = np.dot(H, all_p1[i])
-        estimate_p2[i] = (temp/temp[2])[0:2] # set index 2 to 1 and slice the index 0, 1
-    # Compute error
-    errors = np.linalg.norm(all_p2 - estimate_p2 , axis=1) ** 2
-
-    return errors
-
-def ransac(matches, threshold, iters):
-    num_best_inliers = 0
+def ransac(matches,threshold = 0.5):
     
-    for i in range(iters):
-        points = random_point(matches)
-        H = homography(points)
-        
-        #  avoid dividing by zero 
-        if np.linalg.matrix_rank(H) < 3:
-            continue
-            
-        errors = get_error(matches, H)
-        idx = np.where(errors < threshold)[0]
-        inliers = matches[idx]
+    best_inliers = []
+    for i in range(1000):
 
-        num_inliers = len(inliers)
-        if num_inliers > num_best_inliers:
-            best_inliers = inliers.copy()
-            num_best_inliers = num_inliers
-            best_H = H.copy()
+        H = homography(np.array([matches[i] for i in random.sample(range(len(matches)), 4) ]))
+        inliers = []
+        for matche in matches:
+            p1 = np.append(matche[0:2],1)
+            p2 = np.dot(H,p1)
+            p2 = (p2/p2[2])[0:2]
+            error = np.sum((matche[2:4] - p2)**2)
+            if( error < threshold):
+                inliers.append(error)
+
+        if len(inliers) > len(best_inliers):
+            best_inliers = inliers
+            best_H = H
             
-    print("inliers/matches: {}/{}".format(num_best_inliers, len(matches)))
-    return best_inliers, best_H
+    print("inliers/matches: {}/{} = {}%".format(len(best_inliers), len(matches),len(best_inliers)/len(matches)))
+    return best_H
 
 def stitch_img(left, right, H):
     print("stiching image ...")
@@ -413,6 +387,7 @@ def stitch_img(left, right, H):
     height_l, width_l, channel_l = left.shape
     corners = [[0, 0, 1], [width_l, 0, 1], [width_l, height_l, 1], [0, height_l, 1]]
     corners_new = [np.dot(H, corner) for corner in corners]
+    print(corners_new)
     corners_new = np.array(corners_new).T 
     x_news = corners_new[0] / corners_new[2]
     y_news = corners_new[1] / corners_new[2]
@@ -493,11 +468,10 @@ matches = matcher(kp_left, des_left, kp_right, des_right)
 total_img = np.concatenate((left_rgb, right_rgb), axis=1)
 
 plot_matches(matches, total_img) # Good mathces
-inliers, H = ransac(matches, 0.5, 2000)
 
 end = time.time()
 print(end - start)
 
-plt.imshow(stitch_img(left_rgb, right_rgb, H))
+plt.imshow(stitch_img(left_rgb, right_rgb, ransac(matches)))
 plt.show()
 
