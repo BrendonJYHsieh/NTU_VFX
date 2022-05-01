@@ -293,7 +293,7 @@ def cylindricalWarpImage(image, focal_length):
 
 def SIFT(path):
     image = cv2.imread(path,cv2.IMREAD_GRAYSCALE).astype('float32')
-    image = cylindricalWarpImage(image,705)
+    image = cylindricalWarpImage(image,770)
     #image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     image_rgb = cv2.imread(path)
@@ -373,44 +373,33 @@ def ransac(matches,threshold = 0.5):
     print("inliers/matches: {}/{} = {}%".format(len(best_inliers), len(matches),len(best_inliers)/len(matches)))
     return best_H
 
-def to_mtx(img):
-    H,V,C = img.shape
-    mtr = np.zeros((V,H,C), dtype='float')
-    for i in range(img.shape[0]):
-        mtr[:,i] = img[i]
-    
-    return mtr
+def transform(src_pts, H):
+    # src = [src_pts 1]
+    src = np.pad(src_pts, [(0, 0), (0, 1)], constant_values=1)
+    # pts = H * src
+    pts = np.dot(H, src.T).T
+    # normalize and throw z=1
+    pts = (pts / pts[:, 2].reshape(-1, 1))[:, 0:2]
+    return pts
 
-def to_img(mtr):
-    V,H,C = mtr.shape
-    img = np.zeros((H,V,C), dtype='float')
-    for i in range(mtr.shape[0]):
-        img[:,i] = mtr[i]
-        
-    return img
 
-def warpPerspective(img, M, dsize):
-    mtr = to_mtx(img)
-    R,C = dsize
-    dst = np.zeros((R,C,mtr.shape[2]))
-    for i in range(mtr.shape[0]):
-        for j in range(mtr.shape[1]):
-            res = np.dot(M, [i,j,1])
-            i2,j2,_ = (res / res[2] + 0.5).astype(int)
-            if i2 >= 0 and i2 < R:
-                if j2 >= 0 and j2 < C:
-                    dst[i2,j2] = mtr[i,j]
-    
-    return to_img(dst)
+def warpPerspective(img, H, dsize):
+    width,height = dsize
+    idx_pts = np.mgrid[0:width, 0:height].reshape(2, -1).T
+    map_pts = transform(idx_pts, np.linalg.inv(H))
+    map_pts = map_pts.reshape(width, height, 2).astype(np.float32)
+    warped = cv2.remap(img, map_pts, None, cv2.INTER_CUBIC).transpose(1, 0, 2)
+    return warped
+
 
 def stitch_img(left, right, H):
     print("stiching image ...")
     
     # Convert to double and normalize. Avoid noise.
-    left = cv2.normalize(left.astype('float'), None, 
+    left = cv2.normalize(left.astype(np.float32), None, 
                             0.0, 1.0, cv2.NORM_MINMAX)   
     # Convert to double and normalize.
-    right = cv2.normalize(right.astype('float'), None, 
+    right = cv2.normalize(right.astype(np.float32), None, 
                             0.0, 1.0, cv2.NORM_MINMAX)   
     
     # left image
@@ -489,8 +478,8 @@ def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     plt.show()
 start = time.time()
 
-kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
-kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
+kp_left, des_left, left_rgb = SIFT("NTUST1.png")
+kp_right, des_right, right_rgb = SIFT("NTUST2.png")
 
 plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
 
