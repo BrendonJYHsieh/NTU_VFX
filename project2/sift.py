@@ -487,7 +487,7 @@ start = time.time()
 kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
 kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
 
-plot_keypoint(kp_left,left_rgb,kp_right.copy(),right_rgb.copy())
+plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
 
 matches = matcher(kp_left, des_left, kp_right, des_right)
 total_img = np.concatenate((left_rgb, right_rgb), axis=1)
