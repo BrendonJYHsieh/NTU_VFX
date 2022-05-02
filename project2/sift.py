@@ -70,7 +70,7 @@ def DoG(image):
 
     return array(gaussian_images, dtype=object), dog_images
 
-def Find_Keypoints(gaussian_images, dogs, image_border = 5):
+def Find_Keypoints(gaussian_images, dogs, image_border = 15):
     keypoints = []
     
     print("finding keypoints...")
@@ -291,18 +291,13 @@ def cylindricalWarpImage(image, focal_length):
 
     return (cyl)
 
-def SIFT(path):
-    image = cv2.imread(path,cv2.IMREAD_GRAYSCALE).astype('float32')
-    image = cylindricalWarpImage(image,705)
-    #image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
+def SIFT(image):
+    _image = image.copy()
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
-    image_rgb = cv2.imread(path)
-    image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_BGR2RGB)
-    image_rgb = cylindricalWarpImage(image_rgb,705)
-    gaussian, dog = DoG(image)
+    gaussian, dog = DoG(cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY).astype('float32'))
     keypoints = Find_Keypoints(gaussian,dog)
     descriptors = Generate_Descriptors(keypoints, gaussian)
-    return keypoints,descriptors,image_rgb
+    return keypoints,descriptors,cv2.cvtColor(_image, cv2.COLOR_BGR2RGB)
 
 def matcher(kp1, des1, kp2, des2, threshold = 0.5,crossCheck = True):
     # CrossCheck
@@ -348,7 +343,7 @@ def homography(matches):
         matrix.append([match[0], match[1], 1., 0, 0, 0, -match[2]*match[0], -match[2]*match[1], -match[2]])
     U, s, V = np.linalg.svd(np.array(matrix))
     H = V[8].reshape(3, 3)
-    H = H/H[2, 2] # standardize to let w*H[2,2] = 1
+    H = H/H[2, 2]
     return H
 
 def ransac(matches,threshold = 0.5):
@@ -375,14 +370,10 @@ def ransac(matches,threshold = 0.5):
     return best_H
 
 def transform(src_pts, H):
-    # src = [src_pts 1]
     src = np.pad(src_pts, [(0, 0), (0, 1)], constant_values=1)
-    # pts = H * src
     pts = np.dot(H, src.T).T
-    # normalize and throw z=1
     pts = (pts / pts[:, 2].reshape(-1, 1))[:, 0:2]
     return pts
-
 
 def warpPerspective(image, H, dsize):
     width,height = dsize
@@ -393,43 +384,44 @@ def warpPerspective(image, H, dsize):
     warped = cv2.remap(image, map_pts, None, cv2.INTER_CUBIC).transpose(1, 0, 2)
     return warped
 
-
 def stitch_img(left, right, H):
     print("stiching image ...")
-    # left image
     height, width = left.shape[0:2]
     corners = [[0, 0, 1], [width, 0, 1], [width, height, 1], [0, height, 1]]
-    corners_new = np.array([np.dot(H, corner) for corner in corners]).T 
-    y_offset = min(corners_new[1] / corners_new[2])
-    x_offset = min(corners_new[0] / corners_new[2])
+    _corners = np.array([np.dot(H, corner) for corner in corners]).T 
+    y_offset = min(_corners[1] / _corners[2])
+    x_offset = min(_corners[0] / _corners[2])
 
     translation = np.array([[1, 0, -x_offset], [0, 1, -y_offset], [0, 0, 1]])
     translation_H = np.dot(translation, H)
 
+    left = cv2.normalize(left.astype(np.float32), None, 0.0, 1.0, cv2.NORM_MINMAX) 
+    right = cv2.normalize(right.astype(np.float32), None, 0.0, 1.0, cv2.NORM_MINMAX) 
+
     left_warped = warpPerspective(left, translation_H, (round(abs(x_offset) + left.shape[1]),round(abs(y_offset) + left.shape[0])))
     right_warped = warpPerspective(right, translation, (round(abs(x_offset) + right.shape[1]),round(abs(y_offset) + right.shape[0])))
-     
+
     for i in trange(right_warped.shape[0]):
         for j in range(right_warped.shape[1]):
-            pixel_l = left_warped[i, j, :]
-            pixel_r = right_warped[i, j, :]
-            
-            if np.sum(pixel_l) and not np.sum(pixel_r):
-                left_warped[i, j, :] = pixel_l
-            elif not np.sum(pixel_l) and np.sum(pixel_r):
-                left_warped[i, j, :] = pixel_r
-            elif np.sum(pixel_l) and np.sum(pixel_r):
-                left_warped[i, j, :] = (pixel_l + pixel_r) / 2
-                  
+            start = abs(round(x_offset))+7
+            end = width-7
+            weight = 1-((j-start)/(end-start))
+            if not np.sum(left_warped[i, j]) and np.sum(right_warped[i, j]):
+                left_warped[i, j] = right_warped[i, j]
+            elif np.sum(left_warped[i, j]) and np.sum(right_warped[i, j]):
+                left_warped[i, j] = (left_warped[i, j]*weight + right_warped[i, j]*(1-weight))
+
+
     stitch_image = left_warped[:right_warped.shape[0], :right_warped.shape[1], :]
     return stitch_image
+
 
 def plot_matches(matches, total_img):
     match_img = total_img.copy()
     offset = total_img.shape[1]/2
     fig, ax = plt.subplots()
     ax.set_aspect('equal')
-    ax.imshow(np.array(match_img).astype('uint8')) #　RGB is integer type
+    ax.imshow(np.array(match_img).astype('uint8'))
     
     ax.plot(matches[:, 0], matches[:, 1], 'xr')
     ax.plot(matches[:, 2] + offset, matches[:, 3], 'xr')
@@ -449,9 +441,10 @@ def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     plt.show()
 start = time.time()
 
-kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
-kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
+kp_left, des_left, left_rgb = SIFT(cylindricalWarpImage(cv2.imread("./parrington/prtn01.jpg"),751))
+kp_right, des_right, right_rgb = SIFT(cylindricalWarpImage(cv2.imread("./parrington/prtn00.jpg"),753))
 
+ 
 plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
 
 matches = matcher(kp_left, des_left, kp_right, des_right)
@@ -459,9 +452,15 @@ total_img = np.concatenate((left_rgb, right_rgb), axis=1)
 
 plot_matches(matches, total_img) # Good mathces
 
+reuslt = stitch_img(left_rgb, right_rgb, ransac(matches))
+
 end = time.time()
 print(end - start)
 
-plt.imshow(stitch_img(left_rgb, right_rgb, ransac(matches)))
+reuslt = cv2.cvtColor(reuslt.copy(), cv2.COLOR_BGR2RGB)
+
+plt.imshow(reuslt)
 plt.show()
+
+
 
