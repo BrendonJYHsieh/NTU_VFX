@@ -5,6 +5,8 @@ import numpy as np
 import time
 import math
 import random
+import json
+import argparse
 from tqdm import tqdm, trange
 from cv2 import GaussianBlur,sqrt,resize
 from matplotlib import pyplot as plt
@@ -293,9 +295,9 @@ def cylindricalWarpImage(image, focal_length):
 
 def SIFT(image):
     _image = image.copy()
-    image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
+    image = GaussianBlur(image, (0, 0), sigmaX=1.6, sigmaY=1.6) #1.6
     gaussian, dog = DoG(cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY).astype('float32'))
-    Dog_visualization(dog)
+    #Dog_visualization(dog)
     keypoints = Find_Keypoints(gaussian,dog)
     descriptors = Generate_Descriptors(keypoints, gaussian)
     return keypoints,descriptors,cv2.cvtColor(_image, cv2.COLOR_BGR2RGB)
@@ -439,26 +441,45 @@ def plot_matches(matches, total_img):
 
 def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     for i in kp_left:
-        cv2.circle(left_rgb, (int(i.pt[0]),int(i.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+        cv2.circle(left_rgb, (int(i.pt[0]),int(i.pt[1])), radius=4, color=(255, 0, 0), thickness=-1)
     for j in kp_right:
-        cv2.circle(right_rgb, (int(j.pt[0]),int(j.pt[1])), radius=2, color=(255, 0, 0), thickness=-1)
+        cv2.circle(right_rgb, (int(j.pt[0]),int(j.pt[1])), radius=4, color=(255, 0, 0), thickness=-1)
     total_img = np.concatenate((left_rgb, right_rgb), axis=1)
     plt.imshow(total_img)
     plt.show()
+
+
+def readfile(folder,filename):
+    images = list()
+    f = list()
+    with open(folder+filename, newline='') as jsonfile:
+        data = json.load(jsonfile)
+    for i in data:
+        image = cv2.imread(folder + i["path"],cv2.IMREAD_COLOR)
+        images.append(image)
+        f.append(i["focal"])
+    return images,f,
+
 start = time.time()
 
-kp_left, des_left, left_rgb = SIFT(cylindricalWarpImage(cv2.imread("./7533.jpg"),1015))
-kp_right, des_right, right_rgb = SIFT(cylindricalWarpImage(cv2.imread("./7511.jpg"),1027))
+parser = argparse.ArgumentParser()
+parser.add_argument("--path", default="./data/", type=str)
 
- 
-plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
+args = parser.parse_args()
+
+
+start_time = time.time()
+
+images,focals = readfile(args.path,"info.json")
+
+kp_left, des_left, left_rgb = SIFT(cylindricalWarpImage(images[0],focals[0]))
+kp_right, des_right, right_rgb = SIFT(cylindricalWarpImage(images[1],focals[1]))
 
 matches = matcher(kp_left, des_left, kp_right, des_right)
 total_img = np.concatenate((left_rgb, right_rgb), axis=1)
 
-plot_matches(matches, total_img) # Good mathces
-
 reuslt = stitch_img(left_rgb, right_rgb, ransac(matches))
+cv2.imwrite('result.png', cv2.cvtColor(reuslt,cv2.COLOR_BGR2RGB)*255)
 
 end = time.time()
 print(end - start)
