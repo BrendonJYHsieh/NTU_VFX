@@ -357,6 +357,7 @@ def ransac(matches,threshold = 0.5):
     for index in range(2000):
 
         H = homography(np.array([matches[i] for i in random.sample(range(len(matches)), 4) ]))
+
         inliers = []
         for matche in matches:
             p1 = np.append(matche[0:2],1)
@@ -383,72 +384,44 @@ def transform(src_pts, H):
     return pts
 
 
-def warpPerspective(img, H, dsize):
+def warpPerspective(image, H, dsize):
     width,height = dsize
+    image = cv2.normalize(image.astype(np.float32), None, 0.0, 1.0, cv2.NORM_MINMAX) 
     idx_pts = np.mgrid[0:width, 0:height].reshape(2, -1).T
     map_pts = transform(idx_pts, np.linalg.inv(H))
     map_pts = map_pts.reshape(width, height, 2).astype(np.float32)
-    warped = cv2.remap(img, map_pts, None, cv2.INTER_CUBIC).transpose(1, 0, 2)
+    warped = cv2.remap(image, map_pts, None, cv2.INTER_CUBIC).transpose(1, 0, 2)
     return warped
 
 
 def stitch_img(left, right, H):
     print("stiching image ...")
-    
-    # Convert to double and normalize. Avoid noise.
-    left = cv2.normalize(left.astype(np.float32), None, 
-                            0.0, 1.0, cv2.NORM_MINMAX)   
-    # Convert to double and normalize.
-    right = cv2.normalize(right.astype(np.float32), None, 
-                            0.0, 1.0, cv2.NORM_MINMAX)   
-    
     # left image
-    height_l, width_l = left.shape[0:2]
-    corners = [[0, 0, 1], [width_l, 0, 1], [width_l, height_l, 1], [0, height_l, 1]]
-    corners_new = [np.dot(H, corner) for corner in corners]
-    corners_new = np.array(corners_new).T 
-    
+    height, width = left.shape[0:2]
+    corners = [[0, 0, 1], [width, 0, 1], [width, height, 1], [0, height, 1]]
+    corners_new = np.array([np.dot(H, corner) for corner in corners]).T 
     y_offset = min(corners_new[1] / corners_new[2])
     x_offset = min(corners_new[0] / corners_new[2])
 
-    translation_mat = np.array([[1, 0, -x_offset], [0, 1, -y_offset], [0, 0, 1]])
-    H = np.dot(translation_mat, H)
-    
-    # Get height, width
-    height_new = int(round(abs(y_offset) + height_l))
-    width_new = int(round(abs(x_offset) + width_l))
-    size = (width_new, height_new)
+    translation = np.array([[1, 0, -x_offset], [0, 1, -y_offset], [0, 0, 1]])
+    translation_H = np.dot(translation, H)
 
-    # right image
-    warped_l = warpPerspective(left, H, size)
-
-    height_r, width_r, channel_r = right.shape
-    
-    height_new = int(round(abs(y_offset) + height_r))
-    width_new = int(round(abs(x_offset) + width_r))
-    size = (width_new, height_new)
-    
-
-    warped_r = warpPerspective(right, translation_mat, size)
+    left_warped = warpPerspective(left, translation_H, (round(abs(x_offset) + left.shape[1]),round(abs(y_offset) + left.shape[0])))
+    right_warped = warpPerspective(right, translation, (round(abs(x_offset) + right.shape[1]),round(abs(y_offset) + right.shape[0])))
      
-    black = np.zeros(3)  # Black pixel.
-    
-    # Stitching procedure, store results in warped_l.
-    for i in trange(warped_r.shape[0]):
-        for j in range(warped_r.shape[1]):
-            pixel_l = warped_l[i, j, :]
-            pixel_r = warped_r[i, j, :]
+    for i in trange(right_warped.shape[0]):
+        for j in range(right_warped.shape[1]):
+            pixel_l = left_warped[i, j, :]
+            pixel_r = right_warped[i, j, :]
             
-            if not np.array_equal(pixel_l, black) and np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = pixel_l
-            elif np.array_equal(pixel_l, black) and not np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = pixel_r
-            elif not np.array_equal(pixel_l, black) and not np.array_equal(pixel_r, black):
-                warped_l[i, j, :] = (pixel_l + pixel_r) / 2
-            else:
-                pass
+            if np.sum(pixel_l) and not np.sum(pixel_r):
+                left_warped[i, j, :] = pixel_l
+            elif not np.sum(pixel_l) and np.sum(pixel_r):
+                left_warped[i, j, :] = pixel_r
+            elif np.sum(pixel_l) and np.sum(pixel_r):
+                left_warped[i, j, :] = (pixel_l + pixel_r) / 2
                   
-    stitch_image = warped_l[:warped_r.shape[0], :warped_r.shape[1], :]
+    stitch_image = left_warped[:right_warped.shape[0], :right_warped.shape[1], :]
     return stitch_image
 
 def plot_matches(matches, total_img):
