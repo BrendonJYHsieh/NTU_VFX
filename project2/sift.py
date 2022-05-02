@@ -295,6 +295,7 @@ def SIFT(image):
     _image = image.copy()
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     gaussian, dog = DoG(cv2.cvtColor(image.copy(), cv2.COLOR_BGR2GRAY).astype('float32'))
+    Dog_visualization(dog)
     keypoints = Find_Keypoints(gaussian,dog)
     descriptors = Generate_Descriptors(keypoints, gaussian)
     return keypoints,descriptors,cv2.cvtColor(_image, cv2.COLOR_BGR2RGB)
@@ -403,15 +404,20 @@ def stitch_img(left, right, H):
 
     for i in trange(right_warped.shape[0]):
         for j in range(right_warped.shape[1]):
-            start = abs(round(x_offset))+7
-            end = width-7
+            start = abs(round(x_offset))+5
+            end = width-5
             weight = 1-((j-start)/(end-start))
-            if not np.sum(left_warped[i, j]) and np.sum(right_warped[i, j]):
+            if np.sum(left_warped[i, j])<0.2 and np.sum(right_warped[i, j]):
                 left_warped[i, j] = right_warped[i, j]
-            elif np.sum(left_warped[i, j]) and np.sum(right_warped[i, j]):
+            elif np.sum(left_warped[i, j]) and np.sum(right_warped[i, j]) > 0.2:
                 left_warped[i, j] = (left_warped[i, j]*weight + right_warped[i, j]*(1-weight))
-
-
+                if(np.sum(left_warped[i, j]) > np.sum(right_warped[i, j]) and np.sum(right_warped[i, j])/np.sum(left_warped[i, j])<0.95):
+                    pass
+                elif(np.sum(left_warped[i, j]) < np.sum(right_warped[i, j]) and np.sum(left_warped[i, j])/np.sum(right_warped[i, j])<0.95):
+                    left_warped[i, j] = right_warped[i, j]
+                else:
+                    left_warped[i, j] = (left_warped[i, j]*weight + right_warped[i, j]*(1-weight))
+                    
     stitch_image = left_warped[:right_warped.shape[0], :right_warped.shape[1], :]
     return stitch_image
 
@@ -441,8 +447,8 @@ def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     plt.show()
 start = time.time()
 
-kp_left, des_left, left_rgb = SIFT(cylindricalWarpImage(cv2.imread("./parrington/prtn01.jpg"),751))
-kp_right, des_right, right_rgb = SIFT(cylindricalWarpImage(cv2.imread("./parrington/prtn00.jpg"),753))
+kp_left, des_left, left_rgb = SIFT(cylindricalWarpImage(cv2.imread("./7533.jpg"),1015))
+kp_right, des_right, right_rgb = SIFT(cylindricalWarpImage(cv2.imread("./7511.jpg"),1027))
 
  
 plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
@@ -456,8 +462,6 @@ reuslt = stitch_img(left_rgb, right_rgb, ransac(matches))
 
 end = time.time()
 print(end - start)
-
-reuslt = cv2.cvtColor(reuslt.copy(), cv2.COLOR_BGR2RGB)
 
 plt.imshow(reuslt)
 plt.show()
