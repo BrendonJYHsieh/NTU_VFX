@@ -293,7 +293,7 @@ def cylindricalWarpImage(image, focal_length):
 
 def SIFT(path):
     image = cv2.imread(path,cv2.IMREAD_GRAYSCALE).astype('float32')
-    image = cylindricalWarpImage(image,770)
+    image = cylindricalWarpImage(image,705)
     #image = resize(image, (0, 0), fx=2, fy=2, interpolation=cv2.INTER_LINEAR)
     image = GaussianBlur(image, (0, 0), sigmaX=1.24, sigmaY=1.24) #1.6
     image_rgb = cv2.imread(path)
@@ -403,22 +403,20 @@ def stitch_img(left, right, H):
                             0.0, 1.0, cv2.NORM_MINMAX)   
     
     # left image
-    height_l, width_l, channel_l = left.shape
+    height_l, width_l = left.shape[0:2]
     corners = [[0, 0, 1], [width_l, 0, 1], [width_l, height_l, 1], [0, height_l, 1]]
     corners_new = [np.dot(H, corner) for corner in corners]
-
     corners_new = np.array(corners_new).T 
-    x_news = corners_new[0] / corners_new[2]
-    y_news = corners_new[1] / corners_new[2]
-    y_min = min(y_news)
-    x_min = min(x_news)
+    
+    y_offset = min(corners_new[1] / corners_new[2])
+    x_offset = min(corners_new[0] / corners_new[2])
 
-    translation_mat = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+    translation_mat = np.array([[1, 0, -x_offset], [0, 1, -y_offset], [0, 0, 1]])
     H = np.dot(translation_mat, H)
     
     # Get height, width
-    height_new = int(round(abs(y_min) + height_l))
-    width_new = int(round(abs(x_min) + width_l))
+    height_new = int(round(abs(y_offset) + height_l))
+    width_new = int(round(abs(x_offset) + width_l))
     size = (width_new, height_new)
 
     # right image
@@ -426,8 +424,8 @@ def stitch_img(left, right, H):
 
     height_r, width_r, channel_r = right.shape
     
-    height_new = int(round(abs(y_min) + height_r))
-    width_new = int(round(abs(x_min) + width_r))
+    height_new = int(round(abs(y_offset) + height_r))
+    width_new = int(round(abs(x_offset) + width_r))
     size = (width_new, height_new)
     
 
@@ -478,8 +476,8 @@ def plot_keypoint(kp_left,left_rgb,kp_right,right_rgb):
     plt.show()
 start = time.time()
 
-kp_left, des_left, left_rgb = SIFT("NTUST1.png")
-kp_right, des_right, right_rgb = SIFT("NTUST2.png")
+kp_left, des_left, left_rgb = SIFT("./parrington/prtn01.jpg")
+kp_right, des_right, right_rgb = SIFT("./parrington/prtn00.jpg")
 
 plot_keypoint(kp_left,left_rgb.copy(),kp_right,right_rgb.copy())
 
